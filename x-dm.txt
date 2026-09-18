@@ -1,0 +1,11 @@
+# X DM 短文案（8 个有 X 无 email 的目标）
+# 格式：username|短文案（≤280 字符，无金额，带免费工具链接）
+
+romualdcz|Saw n8n-mcp — hands agents access to n8n workflows carrying credentials. Built a free MIT scanner (mcp-audit) that flags shell/eval/secret-env patterns before an MCP server goes live. github.com/jamking168/mcp-audit
+D4Vinci1|Saw Scrapling — custom fetchers are where os.system/shell=True cluster. Built a free MIT scanner (mcp-audit) that flags those patterns statically. github.com/jamking168/mcp-audit
+ruv|Saw ruflo — orchestrating multiple agents, the tool-execution/subprocess code is where a malicious tool turns into host access. Built a free MIT scanner (mcp-audit) that flags those patterns. github.com/jamking168/mcp-audit
+lgtm_hbu|Saw LibreChat — aggregates many MCP servers/skills, each a trust surface. Built a free MIT scanner (mcp-audit) that flags shell/eval/secret-env patterns before connect. github.com/jamking168/mcp-audit
+goodhunt|Saw Codewhale — reads code + executes commands, eval/subprocess are the direct risk. Built a free MIT scanner (mcp-audit) that flags those patterns statically. github.com/jamking168/mcp-audit
+sickn33|Saw agentic-awesome-skills — runs third-party skills, the execution surface is worth scanning. Built a free MIT scanner (mcp-audit) that flags shell/eval/secret-env before a skill runs. github.com/jamking168/mcp-audit
+Jason_Young1231|Saw cc-switch — manages credentials across AI platforms, one secret_env leak compromises all. Built a free MIT scanner (mcp-audit) that flags those patterns. github.com/jamking168/mcp-audit
+JCodesMore|Saw ai-website-cloner-template — fetches + executes, subprocess/shell calls are the direct risk. Built a free MIT scanner (mcp-audit) that flags those patterns. github.com/jamking168/mcp-audit
