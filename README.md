@@ -45,6 +45,31 @@ python3 mcp_audit.py tests/sample_vuln.py
 - 有误报（比如 `subprocess.run` 未开 shell 也会提示确认）和漏报（混淆过的代码）。
 - 它是第一道筛查，不是审计结论；CRITICAL/HIGH 项仍需人工确认上下文。
 
+## CI 接入（GitHub Actions）
+
+```yaml
+# .github/workflows/mcp-audit.yml
+name: mcp-audit
+on: [push, pull_request]
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Scan for dangerous MCP patterns
+        run: |
+          curl -sL -o mcp_audit.py https://raw.githubusercontent.com/jamking168/mcp-audit/master/mcp_audit.py
+          python3 mcp_audit.py . --json
+```
+
+每次 push/PR 自动跑，发现 CRITICAL 记入流水线日志。
+
+## 固定范围服务（$99）
+
+自己跑免费。需要我帮你接 CI、写逐条发现报告和复现说明，走固定范围服务——见 [SCOPE.md](SCOPE.md)。
+
 ## 状态
 
 MVP。基于 AST（Python）+ 正则兜底（JS/TS/通用）。规则集后续可扩展（越权文件路径数据流、网络出站白名单等）。
