@@ -32,6 +32,34 @@
 
 > 每个对象登记：有效联系 / 回复 / 明确需求 / 报价 / 付款。首单只证明一次成交，第二个无关联客户买同样范围才算可复现现金流。
 
-| # | 对象 | 状态 | 联系日 | 回复 | 需求 | 报价 | 付款 |
+### 已发邮件（9/20，2026-09-18 15:13–15:20）
+
+| # | 对象 | 渠道 | 状态 | 回复 | 需求 | 报价 | 付款 |
 |---|---|---|---|---|---|---|---|
-| 1-20 | 上表 | 待触达 | — | — | — | — | — |
+| 1 | DeusData | martin.vogel.tech@gmail.com | ✅ 已发 | — | — | — | — |
+| 2 | oraios | info@oraios-ai.de | ✅ 已发 | — | — | — | — |
+| 4 | xpzouying | xpzouying@gmail.com | ✅ 已发 | — | — | — | — |
+| 5 | yusufkaraaslan | yusufkaraaslan.yk@gmail.com | ✅ 已发 | — | — | — | — |
+| 6 | samanhappy | samanhappy@gmail.com | ✅ 已发 | — | — | — | — |
+| 12 | zhayujie | zyj@zhayujie.com | ✅ 已发 | — | — | — | — |
+| 15 | wshobson | seth@major7apps.com | ✅ 已发 | — | — | — | — |
+| 17 | diegosouzapw | diegosouza.pw@outlook.com | ✅ 已发 | — | — | — | — |
+| 20 | zhuyansen | 757786288@qq.com | ✅ 已发 | — | — | — | — |
+
+### 待换渠道（11/20，X DM 403 或无公开渠道）
+
+| # | 对象 | X handle | 卡点 |
+|---|---|---|---|
+| 3 | czlonkowski | @romualdcz | X DM 403（陌生人） |
+| 7 | D4Vinci | @D4Vinci1 | X DM 403 |
+| 11 | ruvnet | @ruv | X DM 403 |
+| 13 | danny-avila | @lgtm_hbu | X DM 403 |
+| 14 | Hmbown | @goodhunt | X DM 403 |
+| 16 | sickn33 | @sickn33 | X DM 403 |
+| 18 | farion1231 | @Jason_Young1231 | X DM 403 |
+| 19 | JCodesMore | @JCodesMore | X DM 403 |
+| 8 | sansan0 | — | 无公开 email/X |
+| 9 | Evil0ctal | — | 无公开 email/X（blog gods.dev） |
+| 10 | Panniantong | — | 无公开 email/X |
+
+> 待换渠道策略：X DM 需对方先关注或开「接收所有人 DM」，可先公开 @ 回复（低风险）+ 等对方关注；无渠道的 3 个只能走 GitHub issue（有 spam 风险，暂缓）。
