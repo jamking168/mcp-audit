@@ -20,6 +20,7 @@ For one authorized MCP server repository:
 ## Price & payment
 
 - **$99 USD flat** — one repo, one scan + one CI wiring.
+- **Delivery**: findings report within 3 business days of receiving read access to the repo.
 - Payment: USDT-TRC20 → `TLnnmqLiY4CE8bnekow6ikpjDHoytJP5p3`.
 - Terms agreed before delivery (e.g. half up front, or full before report handoff). No free full-project scan.
 

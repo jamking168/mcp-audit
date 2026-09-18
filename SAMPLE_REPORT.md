@@ -2,7 +2,7 @@
 
 > This is the exact shape of the report you receive for your repository.
 > It was generated from `tests/sample_vuln.py`, an intentionally-vulnerable fixture
-> shipped with the scanner — not a real client repo.
+> shipped with the scanner — not a real client repo. **Sample is based on public code (the project's own test fixture), already sanitized; no client data is shown.**
 
 **Target:** `tests/sample_vuln.py` (fixture)
 **Engine:** `mcp-audit` v1 (pure stdlib, MIT)
