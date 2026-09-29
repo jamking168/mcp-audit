@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 依赖与环境
+node_modules/
+venv/
+.venv*/
+__pycache__/
+*.pyc
+.next/
+dist/
+build/
+
+# 敏感信息（绝不提交）
+.env
+.env.*
+*.env
+config.local.json
+credentials*.json
+*.pem
+*.key
