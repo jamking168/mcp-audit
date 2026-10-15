@@ -26,3 +26,10 @@ credentials*.json
 send_log.jsonl
 *.bak.*
 outreach-*.md.bak.*
+
+# 2026-10-15：内部外联物料（目标名单/话术/发送脚本）不进公开仓库
+targets.md
+x-dm.txt
+send_outreach.py
+HOOK*.md
+DECISION-*.md
