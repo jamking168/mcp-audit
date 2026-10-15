@@ -25,11 +25,16 @@ python3 mcp_audit.py path/to/server.py
 # 扫描整个目录（递归 .py/.js/.ts/.json，跳过 node_modules/.git/venv）
 python3 mcp_audit.py path/to/mcp-server/
 
+# 默认跳过测试/样例/fixture 文件，避免测试噪音干扰报告；如需扫描测试文件：
+python3 mcp_audit.py path/to/mcp-server/ --include-tests
+
 # JSON 输出（接 CI/管道）
 python3 mcp_audit.py path/to/server.py --json
 ```
 
 输出按严重度降序：`CRITICAL > HIGH > MEDIUM > LOW > INFO`。
+
+自测：`python3 -m unittest discover -s tests -v`（10 项，覆盖崩溃回归与跳过逻辑）。
 
 ## 运行
 
@@ -60,7 +65,7 @@ jobs:
         with: { python-version: '3.11' }
       - name: Scan for dangerous MCP patterns
         run: |
-          curl -sL -o mcp_audit.py https://raw.githubusercontent.com/jamking168/mcp-audit/master/mcp_audit.py
+          curl -sL -o mcp_audit.py https://gitlab.com/jamKing168/mcp-audit/-/raw/main/mcp_audit.py
           python3 mcp_audit.py . --json
 ```
 

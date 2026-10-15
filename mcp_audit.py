@@ -81,10 +81,17 @@ class Finding:
 
 
 def _name(node):
+    """把 AST 调用节点还原成 "a.b.c" 形式的名字；解析不出来就返回已能识别的部分。
+
+    2026-10-15 修复：原实现在基座不是 Name/Attribute 时（例如 `get_client().run()`
+    或 `(a or b).attr`）递归返回 None，紧接着 `None + "." + attr` 抛 TypeError，
+    导致**整个扫描进程崩溃**——实测 7 个公开 MCP server 里有 3 个因此完全扫不动。
+    """
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Attribute):
-        return _name(node.value) + "." + node.attr
+        base = _name(node.value)
+        return (base + "." + node.attr) if base else node.attr
     return None
 
 
@@ -146,16 +153,33 @@ def scan_generic(path: Path, findings: list[Finding]):
                 findings.append(Finding(sev, rule, desc, str(path), line_no))
 
 
-def collect_targets(root: Path):
-    """收集要扫描的文件：单个文件直接返回，目录则递归收 .py/.js/.ts/.json。"""
+def collect_targets(root: Path, include_tests: bool = False):
+    """收集要扫描的文件：单个文件直接返回，目录则递归收 .py/.js/.ts/.json。
+
+    2026-10-15 新增：默认跳过测试/样例/fixture —— 实测官方 servers 仓库的发现里
+    **71%（47/66）落在 __tests__ 里**，会把人看的报告淹掉。确实要扫测试时加 --include-tests。
+    """
     exts = {".py", ".js", ".ts", ".mjs", ".cjs", ".json"}
     skip_dirs = {"node_modules", ".git", "__pycache__", ".venv", "venv", "dist", "build"}
+    test_dirs = {"__tests__", "tests", "test", "spec", "__mocks__", "fixtures", "testdata", "e2e"}
+    test_files = re.compile(r"(^test_|_test\.py$|\.test\.|\.spec\.|^conftest\.py$)", re.IGNORECASE)
+
+    def is_test(p: Path) -> bool:
+        if any(part in test_dirs for part in p.parts):
+            return True
+        return bool(test_files.search(p.name))
+
     if root.is_file():
         return [root]
     out = []
     for p in root.rglob("*"):
-        if p.is_file() and p.suffix in exts and not any(s in p.parts for s in skip_dirs):
-            out.append(p)
+        if not p.is_file() or p.suffix not in exts:
+            continue
+        if any(s in p.parts for s in skip_dirs):
+            continue
+        if not include_tests and is_test(p):
+            continue
+        out.append(p)
     return out
 
 
@@ -163,6 +187,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="MCP server 安全审计 CLI")
     ap.add_argument("target", help="要扫描的文件或目录")
     ap.add_argument("--json", action="store_true", help="输出 JSON")
+    ap.add_argument("--include-tests", action="store_true",
+                    help="同时扫描测试/样例/fixture 文件（默认跳过，避免报告被测试噪音淹没）")
     args = ap.parse_args(argv)
 
     root = Path(args.target).expanduser()
@@ -171,11 +197,18 @@ def main(argv=None) -> int:
         return 2
 
     findings: list[Finding] = []
-    for path in collect_targets(root):
-        if path.suffix == ".py":
-            scan_python(path, findings)
-        else:
-            scan_generic(path, findings)
+    targets = collect_targets(root, include_tests=args.include_tests)
+    for path in targets:
+        # 结构性防护：单个文件出任何意外都不能让整轮扫描崩掉（2026-10-15 修复前的实测教训）
+        try:
+            if path.suffix == ".py":
+                scan_python(path, findings)
+            else:
+                scan_generic(path, findings)
+        except Exception as e:
+            findings.append(Finding("INFO", "scan_error",
+                                    f"该文件扫描失败（{type(e).__name__}: {e}）",
+                                    str(path), 0))
 
     order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
     findings.sort(key=lambda f: (order.get(f.severity, 9), f.file, f.line))
