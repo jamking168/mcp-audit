@@ -21,3 +21,8 @@ config.local.json
 credentials*.json
 *.pem
 *.key
+
+# 2026-10-15：不公开外联收件人清单与备份文件
+send_log.jsonl
+*.bak.*
+outreach-*.md.bak.*
