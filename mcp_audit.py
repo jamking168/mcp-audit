@@ -153,6 +153,97 @@ def scan_generic(path: Path, findings: list[Finding]):
                 findings.append(Finding(sev, rule, desc, str(path), line_no))
 
 
+# ── tool 定义（描述面）检查 ───────────────────────────────────────────
+# 2026-10-16 补：README 一直写着扫描「源码或 tool 定义」，但代码里只有对 JSON 的通用正则，
+# 描述级的攻击面（隐藏指令 / prompt injection / 隐形字符）实际没覆盖。这块是 manifest 视角，
+# 不需要源码就能查——与源码级扫描互补。
+POISON_PATTERNS = {
+    "ignore_instructions": re.compile(
+        r"(ignore|disregard|forget|override)\s+(all\s+)?(the\s+)?(previous|prior|above|earlier)\s+"
+        r"(instructions?|prompts?|rules?|directions?)", re.IGNORECASE),
+    "hide_from_user": re.compile(
+        r"(do\s+not|don'?t|never)\s+(tell|inform|mention|notify|reveal|disclose|show)\s+"
+        r"(the\s+)?(user|human|operator|caller)", re.IGNORECASE),
+    "silent_action": re.compile(
+        r"without\s+(telling|informing|asking|notifying|alerting)\s+(the\s+)?(user|human)", re.IGNORECASE),
+    "always_call": re.compile(r"\balways\s+(call|use|invoke|run|execute|include)\b", re.IGNORECASE),
+    "system_prompt": re.compile(
+        r"(system\s+prompt|you\s+are\s+now|new\s+instructions?|assistant\s+instructions?)", re.IGNORECASE),
+    "exfiltrate": re.compile(
+        r"(exfiltrat\w*|(send|post|upload)\s+[^.\n]{0,40}\s+to\s+(https?://|\S+@\S+))", re.IGNORECASE),
+}
+# 语义偏弱、容易误报的规则降为 MEDIUM（实测「always call this first」这类正经描述也会命中）
+WEAK_POISON_RULES = {"always_call"}
+INVISIBLE_CHARS = re.compile("[\u200b-\u200f\u2060-\u2064\u202a-\u202e\u2066-\u2069\ufeff\u00ad]")
+LONG_BASE64 = re.compile(r"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{120,}={0,2}(?![A-Za-z0-9+/])")
+SHELLISH_DESC = re.compile(
+    r"(curl|wget)\s+[^\n|]{0,60}\|\s*(ba|z)?sh|rm\s+-rf\s+/|cat\s+\S*\.env\b", re.IGNORECASE)
+
+
+def scan_tool_defs(path: Path, findings: list[Finding]) -> int:
+    """扫描 MCP tool 定义 JSON 的描述面。返回新增发现数。
+
+    只对能识别的形状生效：JSON 里存在 `tools` 数组，其元素是 dict。找不到就静默返回 0
+    （避免把普通 JSON 配置当成 tool 清单误报）。
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return 0
+
+    tools: list[dict] = []
+
+    def walk(node, depth=0):
+        if depth > 6:
+            return
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k == "tools" and isinstance(v, list):
+                    tools.extend([t for t in v if isinstance(t, dict)])
+                else:
+                    walk(v, depth + 1)
+        elif isinstance(node, list):
+            for x in node:
+                walk(x, depth + 1)
+
+    walk(data)
+    n = 0
+    for t in tools:
+        name = str(t.get("name") or t.get("tool") or "?")
+        desc = str(t.get("description") or "")
+        if not desc:
+            continue
+        for rule, pat in POISON_PATTERNS.items():
+            m = pat.search(desc)
+            if m:
+                sev = "MEDIUM" if rule in WEAK_POISON_RULES else "HIGH"
+                findings.append(Finding(
+                    sev, "tool_poisoning:%s" % rule,
+                    f"tool '{name}' 的描述里出现可疑指令（{rule}）：{m.group(0)[:60]!r}",
+                    str(path), 0))
+                n += 1
+        if INVISIBLE_CHARS.search(desc):
+            findings.append(Finding(
+                "HIGH", "tool_def:hidden_chars",
+                f"tool '{name}' 的描述含不可见/双向控制字符（可能在向模型走私指令）",
+                str(path), 0))
+            n += 1
+        if LONG_BASE64.search(desc):
+            findings.append(Finding(
+                "MEDIUM", "tool_def:base64_blob",
+                f"tool '{name}' 的描述里嵌有长 base64 块（可能是编码后的隐藏指令）",
+                str(path), 0))
+            n += 1
+        m = SHELLISH_DESC.search(desc)
+        if m:
+            findings.append(Finding(
+                "CRITICAL", "tool_def:shell_in_desc",
+                f"tool '{name}' 的描述里直接出现可执行 shell 片段：{m.group(0)[:60]!r}",
+                str(path), 0))
+            n += 1
+    return n
+
+
 def collect_targets(root: Path, include_tests: bool = False):
     """收集要扫描的文件：单个文件直接返回，目录则递归收 .py/.js/.ts/.json。
 
@@ -205,6 +296,8 @@ def main(argv=None) -> int:
                 scan_python(path, findings)
             else:
                 scan_generic(path, findings)
+            if path.suffix == ".json":
+                scan_tool_defs(path, findings)
         except Exception as e:
             findings.append(Finding("INFO", "scan_error",
                                     f"该文件扫描失败（{type(e).__name__}: {e}）",

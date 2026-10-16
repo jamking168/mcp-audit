@@ -15,6 +15,7 @@ Agent 会接入陌生的 MCP server，等于给对方一个能读文件、读环
 | 敏感信息泄露 | `os.environ.get("AWS_SECRET_ACCESS_KEY")` 等 | HIGH |
 | 危险反序列化 | `pickle` / `yaml.load` | MEDIUM |
 | 危险 import | `subprocess` / `child_process` | HIGH/LOW |
+| tool 描述投毒 | 描述里的隐藏指令（"ignore previous instructions"、"do not tell the user"）、夹带指令的不可见/双向控制字符、直接写在描述里的可执行片段 | CRITICAL/HIGH/MEDIUM |
 
 ## 用法
 
@@ -34,7 +35,9 @@ python3 mcp_audit.py path/to/server.py --json
 
 输出按严重度降序：`CRITICAL > HIGH > MEDIUM > LOW > INFO`。
 
-自测：`python3 -m unittest discover -s tests -v`（10 项，覆盖崩溃回归与跳过逻辑）。
+JSON 形式的 tool 清单（含 `tools` 数组）会额外跑一遍**描述面**检查，不需要源码即可用。描述面是启发式：`always call` 这类弱信号降为 MEDIUM，需人工确认上下文。
+
+自测：`python3 -m unittest discover -s tests -v`（16 项，覆盖崩溃回归、跳过逻辑与描述面投毒的正负样本）。
 
 ## 运行
 
