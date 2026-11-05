@@ -34,3 +34,6 @@ x-dm.txt
 send_outreach.py
 HOOK*.md
 DECISION-*.md
+
+# 2026-11-04：所有外联发送脚本一律不公开（send_outreach.py 之外还有 send_followup.py，用通配防再漏）
+send_*.py
