@@ -81,3 +81,83 @@ jobs:
 ## 状态
 
 MVP。基于 AST（Python）+ 正则兜底（JS/TS/通用）。规则集后续可扩展（越权文件路径数据流、网络出站白名单等）。
+
+## Use as an MCP server
+
+mcp-audit 也能作为一个 stdio MCP server 被 agent 直接调用（目录收录要求这一层）。扫描逻辑与 CLI 完全同一套（`mcp_audit.scan_target`），不是第二份实现。
+
+### 安装
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements-mcp.txt   # 只有 mcp 一个运行时依赖
+# 然后（可选）装到 PATH 或直接用绝对路径
+```
+
+### 配置
+
+Claude Desktop（`claude_desktop_config.json`）：
+
+```json
+{
+  "mcpServers": {
+    "mcp-audit": {
+      "command": "/absolute/path/to/.venv/bin/python",
+      "args": ["/absolute/path/to/mcp_server.py"]
+    }
+  }
+}
+```
+
+通用 `mcpServers` 写法（Cursor / Cline / Continue 等）：
+
+```json
+"mcpServers": {
+  "mcp-audit": {
+    "command": "python",
+    "args": ["/absolute/path/to/mcp_server.py"]
+  }
+}
+```
+
+### 工具
+
+`scan_mcp_server`：
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `path` | string | 是 | 要扫描的**绝对路径**（文件或目录） |
+| `include_tests` | boolean | 否（默认 false） | 是否连测试/fixture 一起扫 |
+
+返回单条 text content，内容是 JSON：
+
+```json
+{
+  "target": "/path/to/target",
+  "finding_count": 8,
+  "findings": [
+    {"severity": "critical", "rule": "call:os.system", "file": ".../evil.py", "line": 10, "snippet": "shell 命令执行"}
+  ],
+  "scanned_files": 1
+}
+```
+
+`severity` 取值：`critical` / `high` / `medium` / `low` / `info`（保留 CRITICAL 与 INFO 两级，不压成 high/low，否则 RCE 面会和提示级线索同档）。
+路径不存在或不是绝对路径时返回结构化错误（`{"error": "path_not_found"}`），不会抛栈。
+
+### 实跑示例（本地真实 stdio 往返，节选）
+
+先 `initialize`，再 `notifications/initialized`，然后 `tools/list` / `tools/call`：
+
+```
+→ {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"evidence","version":"0"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"capabilities":{"prompts":{"listChanged":false},"resources":{"listChanged":false,"subscribe":false},"tools":{"listChanged":false}},"protocolVersion":"2025-06-18","serverInfo":{"name":"mcp-audit","version":""}}}
+
+→ {"jsonrpc":"2.0","id":2,"method":"tools/list"}
+← {"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"scan_mcp_server","description":"审计一个 MCP server 项目（本地路径）的安全风险，返回结构化风险清单","inputSchema":{"properties":{"path":{"title":"Path","type":"string"},"include_tests":{"default":false,"title":"Include Tests","type":"boolean"}},"required":["path"],"type":"object","title":"scan_mcp_serverArguments"}}]}}
+
+→ {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"scan_mcp_server","arguments":{"path":"/home/jam/projects/mcp-audit/tests/sample_vuln.py"}}}
+← {"jsonrpc":"2.0","id":3,"result":{"content":[{"text":"{\n  \"target\": \"/home/jam/projects/mcp-audit/tests/sample_vuln.py\",\n  \"finding_count\": 8,\n  \"findings\": [\n    {\n      \"severity\": \"critical\",\n      \"rule\": \"call:os.system\",\n      \"file\": \"/home/jam/projects/mcp-audit/tests/sample_vuln.py\",\n      \"line\": 10,\n      \"snippet\": \"shell 命令执行\"\n    }, …后续 7 条略…\n  ]\n}","type":"text"}]}}
+```
+
+（`outputSchema` 与 `title` 等字段由 SDK 自动生成，上面为节选。）
