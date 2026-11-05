@@ -274,21 +274,14 @@ def collect_targets(root: Path, include_tests: bool = False):
     return out
 
 
-def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="MCP server 安全审计 CLI")
-    ap.add_argument("target", help="要扫描的文件或目录")
-    ap.add_argument("--json", action="store_true", help="输出 JSON")
-    ap.add_argument("--include-tests", action="store_true",
-                    help="同时扫描测试/样例/fixture 文件（默认跳过，避免报告被测试噪音淹没）")
-    args = ap.parse_args(argv)
+def scan_target(root: Path, include_tests: bool = False) -> list[Finding]:
+    """扫描一个文件或目录，返回排好序的发现列表。
 
-    root = Path(args.target).expanduser()
-    if not root.exists():
-        print(f"目标不存在: {root}", file=sys.stderr)
-        return 2
-
+    从 main() 里抽出来的：CLI 与 MCP server 必须走**同一套**编排（收集 → 分派扫描器 →
+    单文件兜底 → 排序），否则两条入口的结论早晚会漂。CLI 行为逐字节不变。
+    """
     findings: list[Finding] = []
-    targets = collect_targets(root, include_tests=args.include_tests)
+    targets = collect_targets(root, include_tests=include_tests)
     for path in targets:
         # 结构性防护：单个文件出任何意外都不能让整轮扫描崩掉（2026-10-15 修复前的实测教训）
         try:
@@ -305,6 +298,23 @@ def main(argv=None) -> int:
 
     order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
     findings.sort(key=lambda f: (order.get(f.severity, 9), f.file, f.line))
+    return findings
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description="MCP server 安全审计 CLI")
+    ap.add_argument("target", help="要扫描的文件或目录")
+    ap.add_argument("--json", action="store_true", help="输出 JSON")
+    ap.add_argument("--include-tests", action="store_true",
+                    help="同时扫描测试/样例/fixture 文件（默认跳过，避免报告被测试噪音淹没）")
+    args = ap.parse_args(argv)
+
+    root = Path(args.target).expanduser()
+    if not root.exists():
+        print(f"目标不存在: {root}", file=sys.stderr)
+        return 2
+
+    findings = scan_target(root, include_tests=args.include_tests)
 
     if args.json:
         print(json.dumps({"findings": [f.to_dict() for f in findings],
