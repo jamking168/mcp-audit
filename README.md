@@ -6,6 +6,21 @@ MCP server 安全审计 CLI。静态扫描一个 MCP server 的源码或 tool �
 
 Agent 会接入陌生的 MCP server，等于给对方一个能读文件、读环境变量、执行命令的入口。一个看似无害的 server，tool 定义里可能藏着 `shell=True`、`eval`、或读取你的 AWS 密钥。装之前先扫一遍，把风险看得见。
 
+## 30 秒看效果
+
+不用装、不用配，把仓库里的样例文件扫一遍（真实输出，2026-11-06 在 Python 3.14 上跑）：
+
+```bash
+$ python3 mcp_audit.py tests/sample_vuln.py
+[CRITICAL] tests/sample_vuln.py:10  shell 命令执行  (call:os.system)
+[CRITICAL] tests/sample_vuln.py:12  subprocess shell=True（命令注入面）  (shell_injection)
+[CRITICAL] tests/sample_vuln.py:14  动态代码执行  (call:eval)
+[    HIGH] tests/sample_vuln.py:4  导入 subprocess（可执行 shell）  (import:subprocess)
+[    HIGH] tests/sample_vuln.py:12  子进程调用（需确认 shell=True）  (call:subprocess.run)
+```
+
+你拿到的是「文件:行号 + 规则名 + 为什么危险」，可以直接贴进 issue 或 PR 评论。
+
 ## 扫什么
 
 | 类别 | 规则示例 | 严重度 |
@@ -37,7 +52,7 @@ python3 mcp_audit.py path/to/server.py --json
 
 JSON 形式的 tool 清单（含 `tools` 数组）会额外跑一遍**描述面**检查，不需要源码即可用。描述面是启发式：`always call` 这类弱信号降为 MEDIUM，需人工确认上下文。
 
-自测：`python3 -m unittest discover -s tests -v`（16 项，覆盖崩溃回归、跳过逻辑与描述面投毒的正负样本）。
+自测：`python3 -m unittest discover -s tests -v`（23 项，覆盖崩溃回归、跳过逻辑、描述面投毒的正负样本；装 `mcp` SDK 后 3 项 MCP 接口用例不再 skip）。
 
 ## 运行
 
@@ -68,8 +83,8 @@ jobs:
         with: { python-version: '3.11' }
       - name: Scan for dangerous MCP patterns
         run: |
-          curl -sL -o mcp_audit.py https://gitlab.com/jamKing168/mcp-audit/-/raw/main/mcp_audit.py
-          python3 mcp_audit.py . --json
+          # 本项目不做 pip 发布：把 mcp_audit.py 复制进你自己仓库（如 scripts/）再调用
+          python3 scripts/mcp_audit.py . --json
 ```
 
 每次 push/PR 自动跑，发现 CRITICAL 记入流水线日志。
