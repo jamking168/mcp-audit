@@ -6,6 +6,21 @@ MCP server 安全审计 CLI。静态扫描一个 MCP server 的源码或 tool �
 
 Agent 会接入陌生的 MCP server，等于给对方一个能读文件、读环境变量、执行命令的入口。一个看似无害的 server，tool 定义里可能藏着 `shell=True`、`eval`、或读取你的 AWS 密钥。装之前先扫一遍，把风险看得见。
 
+## 30 秒看效果
+
+不用装、不用配，把仓库里的样例文件扫一遍（真实输出，2026-11-06 在 Python 3.14 上跑）：
+
+```bash
+$ python3 mcp_audit.py tests/sample_vuln.py
+[CRITICAL] tests/sample_vuln.py:10  shell 命令执行  (call:os.system)
+[CRITICAL] tests/sample_vuln.py:12  subprocess shell=True（命令注入面）  (shell_injection)
+[CRITICAL] tests/sample_vuln.py:14  动态代码执行  (call:eval)
+[    HIGH] tests/sample_vuln.py:4  导入 subprocess（可执行 shell）  (import:subprocess)
+[    HIGH] tests/sample_vuln.py:12  子进程调用（需确认 shell=True）  (call:subprocess.run)
+```
+
+你拿到的是「文件:行号 + 规则名 + 为什么危险」，可以直接贴进 issue 或 PR 评论。
+
 ## 扫什么
 
 | 类别 | 规则示例 | 严重度 |
@@ -37,7 +52,7 @@ python3 mcp_audit.py path/to/server.py --json
 
 JSON 形式的 tool 清单（含 `tools` 数组）会额外跑一遍**描述面**检查，不需要源码即可用。描述面是启发式：`always call` 这类弱信号降为 MEDIUM，需人工确认上下文。
 
-自测：`python3 -m unittest discover -s tests -v`（16 项，覆盖崩溃回归、跳过逻辑与描述面投毒的正负样本）。
+自测：`python3 -m unittest discover -s tests -v`（23 项，覆盖崩溃回归、跳过逻辑、描述面投毒的正负样本；装 `mcp` SDK 后 3 项 MCP 接口用例不再 skip）。
 
 ## 运行
 
@@ -68,8 +83,8 @@ jobs:
         with: { python-version: '3.11' }
       - name: Scan for dangerous MCP patterns
         run: |
-          curl -sL -o mcp_audit.py https://gitlab.com/jamKing168/mcp-audit/-/raw/main/mcp_audit.py
-          python3 mcp_audit.py . --json
+          # 本项目不做 pip 发布：把 mcp_audit.py 复制进你自己仓库（如 scripts/）再调用
+          python3 scripts/mcp_audit.py . --json
 ```
 
 每次 push/PR 自动跑，发现 CRITICAL 记入流水线日志。
@@ -81,3 +96,105 @@ jobs:
 ## 状态
 
 MVP。基于 AST（Python）+ 正则兜底（JS/TS/通用）。规则集后续可扩展（越权文件路径数据流、网络出站白名单等）。
+
+## Use as an MCP server
+
+mcp-audit 也能作为一个 stdio MCP server 被 agent 直接调用（目录收录要求这一层）。扫描逻辑与 CLI 完全同一套（`mcp_audit.scan_target`），不是第二份实现。
+
+### 安装
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements-mcp.txt   # 只有 mcp 一个运行时依赖
+# 然后（可选）装到 PATH 或直接用绝对路径
+```
+
+### 配置
+
+Claude Desktop（`claude_desktop_config.json`）：
+
+```json
+{
+  "mcpServers": {
+    "mcp-audit": {
+      "command": "/absolute/path/to/.venv/bin/python",
+      "args": ["/absolute/path/to/mcp_server.py"]
+    }
+  }
+}
+```
+
+通用 `mcpServers` 写法（Cursor / Cline / Continue 等）：
+
+```json
+"mcpServers": {
+  "mcp-audit": {
+    "command": "python",
+    "args": ["/absolute/path/to/mcp_server.py"]
+  }
+}
+```
+
+### 工具
+
+`scan_mcp_server`：
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `path` | string | 是 | 要扫描的**绝对路径**（文件或目录） |
+| `include_tests` | boolean | 否（默认 false） | 是否连测试/fixture 一起扫 |
+
+返回单条 text content，内容是 JSON：
+
+```json
+{
+  "target": "/path/to/target",
+  "finding_count": 8,
+  "findings": [
+    {"severity": "critical", "rule": "call:os.system", "file": ".../evil.py", "line": 10, "snippet": "shell 命令执行"}
+  ],
+  "scanned_files": 1
+}
+```
+
+`severity` 取值：`critical` / `high` / `medium` / `low` / `info`（保留 CRITICAL 与 INFO 两级，不压成 high/low，否则 RCE 面会和提示级线索同档）。
+路径不存在或不是绝对路径时返回结构化错误（`{"error": "path_not_found"}`），不会抛栈。
+
+### 实跑示例（本地真实 stdio 往返，节选）
+
+先 `initialize`，再 `notifications/initialized`，然后 `tools/list` / `tools/call`：
+
+```
+→ {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"evidence","version":"0"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"capabilities":{"prompts":{"listChanged":false},"resources":{"listChanged":false,"subscribe":false},"tools":{"listChanged":false}},"protocolVersion":"2025-06-18","serverInfo":{"name":"mcp-audit","version":""}}}
+
+→ {"jsonrpc":"2.0","id":2,"method":"tools/list"}
+← {"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"scan_mcp_server","description":"审计一个 MCP server 项目（本地路径）的安全风险，返回结构化风险清单","inputSchema":{"properties":{"path":{"title":"Path","type":"string"},"include_tests":{"default":false,"title":"Include Tests","type":"boolean"}},"required":["path"],"type":"object","title":"scan_mcp_serverArguments"}}]}}
+
+→ {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"scan_mcp_server","arguments":{"path":"/home/jam/projects/mcp-audit/tests/sample_vuln.py"}}}
+← {"jsonrpc":"2.0","id":3,"result":{"content":[{"text":"{\n  \"target\": \"/home/jam/projects/mcp-audit/tests/sample_vuln.py\",\n  \"finding_count\": 8,\n  \"findings\": [\n    {\n      \"severity\": \"critical\",\n      \"rule\": \"call:os.system\",\n      \"file\": \"/home/jam/projects/mcp-audit/tests/sample_vuln.py\",\n      \"line\": 10,\n      \"snippet\": \"shell 命令执行\"\n    }, …后续 7 条略…\n  ]\n}","type":"text"}]}}
+```
+
+（`outputSchema` 与 `title` 等字段由 SDK 自动生成，上面为节选。）
+
+### Remote (streamable-http)
+
+同一个 tool 也能以 streamable-http 挂到公网路径上（端点固定 `/mcp`），供只收远程服务的注册表收录：
+
+```bash
+python3 mcp_server.py --http --host 127.0.0.1 --port 8897
+# 端点: http://127.0.0.1:8897/mcp  （默认 host 127.0.0.1 / port 8000）
+```
+
+不带参数时行为不变，仍是 stdio（`run("stdio")`，stdout 只走 JSON-RPC，不打印任何日志）。
+
+仓库根的 `server.json` 是官方注册表（`registry.modelcontextprotocol.io`）的提交清单，字段与
+`server.schema.json` 对齐；`version` 与 `mcp_server.__version__` 由测试保证一致：
+
+```bash
+curl -s -X POST https://registry.modelcontextprotocol.io/v0/validate \
+  -H 'Content-Type: application/json' -d @server.json
+# {"valid":true,"issues":[]}
+```
+
+注：`description` 有 100 字符上限（超了返回 422 `expected length <= 100`）。
