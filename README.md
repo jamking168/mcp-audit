@@ -176,3 +176,25 @@ Claude Desktop（`claude_desktop_config.json`）：
 ```
 
 （`outputSchema` 与 `title` 等字段由 SDK 自动生成，上面为节选。）
+
+### Remote (streamable-http)
+
+同一个 tool 也能以 streamable-http 挂到公网路径上（端点固定 `/mcp`），供只收远程服务的注册表收录：
+
+```bash
+python3 mcp_server.py --http --host 127.0.0.1 --port 8897
+# 端点: http://127.0.0.1:8897/mcp  （默认 host 127.0.0.1 / port 8000）
+```
+
+不带参数时行为不变，仍是 stdio（`run("stdio")`，stdout 只走 JSON-RPC，不打印任何日志）。
+
+仓库根的 `server.json` 是官方注册表（`registry.modelcontextprotocol.io`）的提交清单，字段与
+`server.schema.json` 对齐；`version` 与 `mcp_server.__version__` 由测试保证一致：
+
+```bash
+curl -s -X POST https://registry.modelcontextprotocol.io/v0/validate \
+  -H 'Content-Type: application/json' -d @server.json
+# {"valid":true,"issues":[]}
+```
+
+注：`description` 有 100 字符上限（超了返回 422 `expected length <= 100`）。

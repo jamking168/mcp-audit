@@ -1,0 +1,14 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "top.web3project/mcp-audit",
+  "description": "Security audit for MCP servers: command injection, unsafe file access, secrets, prompt injection.",
+  "version": "0.2.0",
+  "title": "mcp-audit",
+  "websiteUrl": "https://web3project.top/intel",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://web3project.top/mcp"
+    }
+  ]
+}
