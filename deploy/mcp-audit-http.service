@@ -1,0 +1,14 @@
+[Unit]
+Description=mcp-audit MCP server (streamable-http 127.0.0.1:8897, /mcp)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/jam/projects/mcp-audit
+ExecStart=/home/jam/projects/mcp-audit/.venv/bin/python /home/jam/projects/mcp-audit/mcp_server.py --http --host 127.0.0.1 --port 8897
+Restart=always
+RestartSec=5
+MemoryMax=300M
+
+[Install]
+WantedBy=default.target
