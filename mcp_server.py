@@ -119,13 +119,168 @@ def build_server():
     return server
 
 
+# ---------------- 访问日志（JSON-RPC 级，2026-11-17 需求单 mcp-access-log） ----------------
+# 为什么要它：uvicorn 只记方法/路径/状态码，日志里根本没有 tools/list、tools/call、initialize
+# 这些字符串，于是「被看见」（62 个 IP、214 次请求）和「被用」（真实 MCP 客户端握手）分不开。
+# 硬边界：**只记元数据，绝不落请求体原文、参数值、响应内容** —— tools/call 的 arguments
+# 可能含用户私密内容。
+LOG_DIR = Path(__file__).resolve().parent / "logs"
+ACCESS_LOG = LOG_DIR / "mcp_access.jsonl"
+ACCESS_LOG_MAX_BYTES = 20 * 1024 * 1024     # 超过就轮转
+ACCESS_LOG_KEEP_DAYS = 7
+_BODY_LIMIT = 256 * 1024                    # 只为解析 method/clientInfo，读这么多就够
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _header(scope, name: str) -> str:
+    for k, v in scope.get("headers") or []:
+        if k.decode("latin-1").lower() == name.lower():
+            return v.decode("latin-1", "replace")
+    return ""
+
+
+def _client_ip(scope) -> str:
+    """取 X-Forwarded-For 第一跳（反代后面），没有则用连接对端地址。"""
+    xff = _header(scope, "x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    client = scope.get("client") or ("", 0)
+    return str(client[0] or "")
+
+
+def _rpc_meta(body: bytes) -> dict:
+    """从请求体里只抠白名单字段：method / params.name / params.clientInfo.。
+
+    这是**唯一**接触请求内容的地方，其余一律丢进垃圾桶（不进返回值、不进日志）。
+    """
+    meta: dict[str, str | None] = {"method": None, "tool": None,
+                                    "client": None, "client_ver": None}
+    if not body:
+        return meta
+    try:
+        data = json.loads(body.decode("utf-8", "replace"))
+    except (ValueError, UnicodeDecodeError):
+        return meta            # 非法 JSON：方法记为 null，不影响请求处理
+    if isinstance(data, list):  # JSON-RPC batch
+        data = data[0] if data and isinstance(data[0], dict) else {}
+    if not isinstance(data, dict):
+        return meta
+    method = data.get("method")
+    meta["method"] = method if isinstance(method, str) else None
+    params = data.get("params")
+    if isinstance(params, dict):
+        name = params.get("name")
+        meta["tool"] = name if isinstance(name, str) else None
+        ci = params.get("clientInfo")
+        if isinstance(ci, dict):
+            c = ci.get("name")
+            v = ci.get("version")
+            meta["client"] = c if isinstance(c, str) else None
+            meta["client_ver"] = v if isinstance(v, str) else None
+    return meta
+
+
+def _rotate_if_needed(path: Path) -> None:
+    """超过 20MB 换一个 .1 文件，并删掉 7 天前的轮转件（只删自己这个前缀）。"""
+    try:
+        if path.exists() and path.stat().st_size > ACCESS_LOG_MAX_BYTES:
+            path.replace(path.with_suffix(path.suffix + ".1"))
+    except OSError:
+        return
+    import time
+    cutoff = time.time() - ACCESS_LOG_KEEP_DAYS * 86400
+    try:
+        for old in path.parent.glob(path.name + "*"):
+            if old == path:
+                continue
+            if old.stat().st_mtime < cutoff:
+                old.unlink()
+    except OSError:
+        pass
+
+
+def write_access_record(rec: dict, path: Path = ACCESS_LOG) -> None:
+    """一行一个 JSON。写失败只打 stderr —— 日志不能影响请求处理。"""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _rotate_if_needed(path)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception as e:  # noqa: BLE001
+        print(f"mcp_access log failed: {type(e).__name__}: {e}", file=sys.stderr)
+
+
+class AccessLogMiddleware:
+    """纯 ASGI 中间件：只在 HTTP_PATH 上记录元数据，其余请求原样穿透。"""
+
+    def __init__(self, app, path: str = HTTP_PATH, log_path: Path = ACCESS_LOG):
+        self.app = app
+        self.path = path
+        self.log_path = log_path
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or scope.get("path") != self.path:
+            return await self.app(scope, receive, send)
+
+        body = bytearray()
+        state = {"truncated": False, "status": None}
+
+        async def _recv():
+            msg = await receive()
+            if msg.get("type") == "http.request" and not state["truncated"]:
+                chunk = msg.get("body") or b""
+                if len(body) + len(chunk) <= _BODY_LIMIT:
+                    body.extend(chunk)
+                else:
+                    state["truncated"] = True
+            return msg
+
+        async def _send(msg):
+            if msg.get("type") == "http.response.start":
+                state["status"] = msg.get("status")
+            await send(msg)
+
+        try:
+            await self.app(scope, _recv, _send)
+        finally:
+            meta = _rpc_meta(bytes(body))
+            write_access_record({
+                "ts": _now_iso(),
+                "ip": _client_ip(scope),
+                "ua": _header(scope, "user-agent")[:200],
+                "method": meta["method"],
+                "client": meta["client"],
+                "client_ver": meta["client_ver"],
+                "tool": meta["tool"],
+                "status": state["status"],
+                "sid_present": bool(_header(scope, "mcp-session-id")),
+            }, self.log_path)
+
+
 def _run_streamable_http(server, host: str, port: int) -> None:
     """以 streamable-http 起服务；端点固定 HTTP_PATH。
 
-    mcp v2 的 MCPServer.run 直接接 host/port/streamable_http_path；
-    v1 的 FastMCP 不接这些 kwargs，只能走 mcp.settings —— 两代都要能跑。
+    2026-11-17：改为自己起 uvicorn，好把 AccessLogMiddleware 包在 SDK 造的 ASGI app 外面
+    （SDK 的 server.run() 不给挂中间件的口子）。端点、监听地址、端口语义与之前完全一致。
     """
+    app = None
     try:
+        app = server.streamable_http_app(streamable_http_path=HTTP_PATH)
+    except (AttributeError, TypeError):  # pragma: no cover - 老 SDK 没有这个方法
+        app = None
+
+    if app is not None:
+        import uvicorn
+
+        uvicorn.run(AccessLogMiddleware(app, path=HTTP_PATH), host=host, port=port,
+                    log_level="info")
+        return
+
+    try:  # pragma: no cover - 兜底：维持原行为（无访问日志）
         server.run("streamable-http", host=host, port=port, streamable_http_path=HTTP_PATH)
     except TypeError:  # pragma: no cover - 仅 mcp < 2
         import mcp.settings as _settings
