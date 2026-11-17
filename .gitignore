@@ -37,3 +37,12 @@ DECISION-*.md
 
 # 2026-11-04：所有外联发送脚本一律不公开（send_outreach.py 之外还有 send_followup.py，用通配防再漏）
 send_*.py
+
+# 2026-11-17：联系人清单与抓取脚本属 PII，绝不入库
+# （原有 send_*.py 护住了发送脚本，但漏了清单本身和 find_contacts*.py）
+contacts*.csv
+contacts*.json
+find_contacts*.py
+
+# 2026-11-17：访问日志属运行时遥测（含来源 IP/UA），不入库
+logs/
