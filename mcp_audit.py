@@ -44,7 +44,8 @@ SENSITIVE_ENV = re.compile(
 
 # 危险 import（出现即提示，作为上下文线索）
 DANGEROUS_IMPORTS = {
-    "subprocess": ("HIGH", "导入 subprocess（可执行 shell）"),
+    # 2026-11-18：导入本身不是问题，真正的信号是 subprocess.run/Popen 那几条（仍为 HIGH）。
+    "subprocess": ("LOW", "导入 subprocess（仅在使用处才相关）"),
     "os": ("LOW", "导入 os（os.system/os.popen 有 shell 风险）"),
     "pickle": ("MEDIUM", "pickle 反序列化可导致任意代码执行"),
     "yaml": ("MEDIUM", "yaml.load 不安全加载（应用 safe_load）"),
@@ -52,14 +53,21 @@ DANGEROUS_IMPORTS = {
 
 # 非 Python 文件的通用危险模式（regex 兜底）
 GENERIC_PATTERNS = {
-    "shell_exec": (re.compile(r"\b(system|exec|popen|spawn|shell)\s*\(", re.IGNORECASE),
+    # 2026-11-18：加负向前瞻排除 `.exec(` / `.spawn(` 这类**方法调用**——
+    # `MARKER_RE.exec(body)` 是正则匹配，不是命令执行，之前被判 CRITICAL。
+    "shell_exec": (re.compile(r"(?<![.\w$])(system|exec|execSync|execFile|popen|spawn|shell)\s*\("),
                    "CRITICAL", "疑似 shell 命令执行"),
-    "eval_exec": (re.compile(r"\b(eval|exec|Function\s*\(|new\s+Function)\b", re.IGNORECASE),
+    "eval_exec": (re.compile(r"(?<![.\w$])(eval|Function\s*\(|new\s+Function)\b"),
                   "CRITICAL", "疑似动态代码执行"),
+    # 排除 `.exec(` 之后会漏掉 child_process.exec；用「引入子进程模块」这条更稳定的信号兜住。
+    "child_process": (re.compile(r"(require\s*\(\s*['\"]child_process|from\s+['\"](node:)?child_process)"),
+                      "HIGH", "引入子进程能力（参数来源需确认是否受控）"),
     "secret_read": (re.compile(r"(process\.env\.[A-Z_]*|getenv\(|environ\.get\(|os\.environ)", re.IGNORECASE),
                     "MEDIUM", "读取环境变量（需核对是否含密钥）"),
+    # 2026-11-18 降级：Node/Python 项目里 readFileSync/unlink 是常规操作，实测单仓 145 条 HIGH
+    # 「危险文件读写」把真正要看的东西全埋了。只在路径来自外部输入时才值得关注，因此降为 LOW。
     "dangerous_fs": (re.compile(r"(readFileSync|writeFileSync|createWriteStream|rmSync|unlink)", re.IGNORECASE),
-                     "HIGH", "危险文件读写（路径需确认是否受控）"),
+                     "LOW", "文件读写（常规操作；路径若来自外部输入才需要关注）"),
 }
 
 # 危险 import 名（非 Python）
@@ -78,6 +86,53 @@ class Finding:
     def to_dict(self):
         return {"severity": self.severity, "rule": self.rule,
                 "desc": self.desc, "file": self.file, "line": self.line}
+
+
+SARIF_LEVEL = {"CRITICAL": "error", "HIGH": "error", "MEDIUM": "warning",
+               "LOW": "note", "INFO": "note"}
+
+
+def findings_to_sarif(findings, base_uri: str = "") -> dict:
+    """把发现列表转成 SARIF 2.1.0（GitHub code scanning / CodeQL 可直接上传）。
+
+    接受 Finding 对象或 dict（severity 大小写不敏感，desc/snippet 二选一）。
+    放在这里而不是 scan_repo：mcp_audit.py 是 stdlib-only 单文件，客户可以把
+    它 vendor 进自己仓库跑 CI，不需要装 mcp SDK。
+    """
+    rules: dict[str, dict] = {}
+    results = []
+    for f in findings:
+        d = f.to_dict() if hasattr(f, "to_dict") else dict(f)
+        sev = str(d.get("severity", "info")).lower()
+        rule_id = d.get("rule") or "mcp-audit"
+        text = d.get("desc") or d.get("snippet") or rule_id
+        if rule_id not in rules:
+            rules[rule_id] = {
+                "id": rule_id,
+                "name": rule_id,
+                "shortDescription": {"text": str(text)[:200]},
+                "helpUri": "https://web3project.top/mcp-audit",
+                "properties": {"severity": sev},
+            }
+        results.append({
+            "ruleId": rule_id,
+            "level": SARIF_LEVEL.get(sev.upper(), "note"),
+            "message": {"text": str(text)},
+            "locations": [{"physicalLocation": {
+                "artifactLocation": {"uri": str(d.get("file") or ""), "uriBaseId": "%SRCROOT%"},
+                "region": {"startLine": int(d.get("line") or 1)},
+            }}],
+            "properties": {"severity": sev},
+        })
+    run = {"tool": {"driver": {
+        "name": "mcp-audit",
+        "informationUri": "https://web3project.top/mcp-audit",
+        "rules": list(rules.values()),
+    }}, "results": results}
+    if base_uri:
+        run["originalUriBaseIds"] = {"%SRCROOT%": {"uri": base_uri.rstrip("/") + "/"}}
+    return {"$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+            "version": "2.1.0", "runs": [run]}
 
 
 def _name(node):
@@ -127,7 +182,7 @@ def scan_python(path: Path, findings: list[Finding]):
                 for arg in node.args:
                     if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                         if SENSITIVE_ENV.search(arg.value):
-                            findings.append(Finding("HIGH", "secret_env",
+                            findings.append(Finding("MEDIUM", "secret_env",
                                                     f"读取敏感环境变量 {arg.value!r}",
                                                     str(path), node.lineno))
 
@@ -145,11 +200,41 @@ def scan_python(path: Path, findings: list[Finding]):
                                         str(path), node.lineno))
 
 
+def _strip_js_noise(line: str) -> str:
+    """去掉 JS/TS 行内的注释与字符串字面量，再交给正则。
+
+    2026-11-18：扫官方 servers 仓库时，一行注释 `// cp.exec(...)` 会被判成 CRITICAL
+    动态代码执行 + shell 执行，242 条发现里绝大多数是这种。规则本身要看的是「这行有没有
+    真的调用」，不是「这行有没有出现这个词」。
+    """
+    s = line
+    # 行注释：不要把 https:// 里的 // 当注释
+    m = re.search(r"(^|[^:])//", s)
+    if m:
+        s = s[:m.start() + len(m.group(1))]
+    # 块注释残片
+    s = re.sub(r"/\*.*?\*/", " ", s)
+    if s.lstrip().startswith("*"):
+        return ""
+    # 字符串字面量（含模板串），保留长度意义不大，直接抹掉
+    s = re.sub(r"'(?:[^'\\]|\\.)*'", "''", s)
+    s = re.sub(r'"(?:[^"\\]|\\.)*"', '""', s)
+    s = re.sub(r"`(?:[^`\\]|\\.)*`", "``", s)
+    return s
+
+
 def scan_generic(path: Path, findings: list[Finding]):
     text = path.read_text(encoding="utf-8", errors="replace")
+    is_js = path.suffix in {".js", ".mjs", ".cjs", ".ts"}
     for line_no, line in enumerate(text.splitlines(), 1):
+        probe = _strip_js_noise(line) if is_js else line
+        if not probe.strip():
+            continue
         for rule, (pat, sev, desc) in GENERIC_PATTERNS.items():
-            if pat.search(line):
+            # child_process 的关键信息就在字符串字面量里（require('child_process')），
+            # 所以这条用原始行匹配，其余用去噪后的行。
+            target = line if rule == "child_process" else probe
+            if pat.search(target):
                 findings.append(Finding(sev, rule, desc, str(path), line_no))
 
 
@@ -252,6 +337,11 @@ def collect_targets(root: Path, include_tests: bool = False):
     """
     exts = {".py", ".js", ".ts", ".mjs", ".cjs", ".json"}
     skip_dirs = {"node_modules", ".git", "__pycache__", ".venv", "venv", "dist", "build"}
+    # 2026-11-18：锁文件不能进代码规则扫描。实测扫官方 servers 仓库时 package-lock.json
+    # 单独贡献了上百条 CRITICAL「动态代码执行」——锁文件里到处是包名/脚本名里的 exec/eval，
+    # 一份满是假阳性的报告比没有报告更伤信任。
+    skip_files = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "npm-shrinkwrap.json",
+                  "composer.lock", "poetry.lock", "Pipfile.lock", "Cargo.lock", "go.sum"}
     test_dirs = {"__tests__", "tests", "test", "spec", "__mocks__", "fixtures", "testdata", "e2e"}
     test_files = re.compile(r"(^test_|_test\.py$|\.test\.|\.spec\.|^conftest\.py$)", re.IGNORECASE)
 
@@ -265,6 +355,8 @@ def collect_targets(root: Path, include_tests: bool = False):
     out = []
     for p in root.rglob("*"):
         if not p.is_file() or p.suffix not in exts:
+            continue
+        if p.name in skip_files:
             continue
         if any(s in p.parts for s in skip_dirs):
             continue
@@ -287,14 +379,39 @@ def scan_target(root: Path, include_tests: bool = False) -> list[Finding]:
         try:
             if path.suffix == ".py":
                 scan_python(path, findings)
+            elif path.suffix == ".json":
+                # 2026-11-18：JSON 只走工具定义检查。之前 JSON 也过一遍通用代码规则，
+                # 于是 package.json 里的 "exec" 之类字符串被判成 CRITICAL 动态代码执行。
+                scan_tool_defs(path, findings)
             else:
                 scan_generic(path, findings)
-            if path.suffix == ".json":
-                scan_tool_defs(path, findings)
         except Exception as e:
             findings.append(Finding("INFO", "scan_error",
                                     f"该文件扫描失败（{type(e).__name__}: {e}）",
                                     str(path), 0))
+
+    # 同一文件同一条规则最多列 3 处：实测 token-safe 这类仓库会给出 74 条 secret_env、
+    # 50 条 subprocess.run，逐条列出等于把报告变成日志，客户看不到重点。
+    capped: list[Finding] = []
+    groups: dict[tuple[str, str], list[Finding]] = {}
+    for f in findings:
+        groups.setdefault((f.rule, str(f.file)), []).append(f)
+    for (rule, file), items in groups.items():
+        keep = sorted(items, key=lambda x: x.line)[:3]
+        capped.extend(keep)
+        if len(items) > 3:
+            capped.append(Finding("INFO", rule + ":more",
+                                  f"该文件另有 {len(items) - 3} 处同类问题（同类最多列 3 处）",
+                                  file, 0))
+    findings = capped
+
+    # 报告里的路径一律相对仓库根：绝对路径既泄露本机目录结构，客户也没法照着定位。
+    if root.is_dir():
+        root_str = str(root.resolve())
+        for f in findings:
+            fp = str(f.file)
+            if fp.startswith(root_str):
+                f.file = fp[len(root_str):].lstrip("/") or fp
 
     order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
     findings.sort(key=lambda f: (order.get(f.severity, 9), f.file, f.line))
@@ -307,6 +424,8 @@ def main(argv=None) -> int:
     ap.add_argument("--json", action="store_true", help="输出 JSON")
     ap.add_argument("--include-tests", action="store_true",
                     help="同时扫描测试/样例/fixture 文件（默认跳过，避免报告被测试噪音淹没）")
+    ap.add_argument("--sarif", metavar="PATH",
+                    help="把 SARIF 2.1.0 写到 PATH（GitHub code scanning 可直接上传）")
     args = ap.parse_args(argv)
 
     root = Path(args.target).expanduser()
@@ -320,6 +439,11 @@ def main(argv=None) -> int:
         print(json.dumps({"findings": [f.to_dict() for f in findings],
                           "total": len(findings)}, ensure_ascii=False, indent=2))
         return 0
+
+    if args.sarif:
+        Path(args.sarif).write_text(
+            json.dumps(findings_to_sarif(findings, base_uri=str(root.resolve())),
+                       ensure_ascii=False, indent=2), encoding="utf-8")
 
     if not findings:
         print("未发现危险模式。")
