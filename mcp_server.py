@@ -34,7 +34,7 @@ TOOL_NAME = "scan_mcp_server"
 
 # 仓库原先没有版本号标记（无 pyproject、无 git tag）。server.json 需要 semver，
 # 这里定一处作为单一出处，测试里断言 server.json 与它一致，避免两边漂。
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 # streamable-http 的端点路径固定为 /mcp：server.json 的 remotes[].url 末尾必须与它一致。
 HTTP_PATH = "/mcp"

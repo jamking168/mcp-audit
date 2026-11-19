@@ -72,4 +72,4 @@
 
 ---
 
-*Static analysis flags patterns, not proven exploits. Each finding above needs a manual read to confirm whether untrusted input can actually reach the sink — the $99 service report includes that confirmation per finding.*
+*Static analysis flags patterns, not proven exploits. Each finding above needs a manual read to confirm whether untrusted input can actually reach the sink — manual review of individual findings is available on request, quoted per engagement (reply to the delivery email with the order id).*
