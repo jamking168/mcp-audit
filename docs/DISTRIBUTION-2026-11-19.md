@@ -11,7 +11,7 @@
 
 | 渠道 | 提交入口 | 当前状态（核验方式） | 下一步 |
 |---|---|---|---|
-| 官方 MCP Registry | registry.modelcontextprotocol.io（`mcp-publisher publish`） | ✅ 已在架，API 实查 2026-11-19：`top.web3project/mcp-audit` v0.2.0 | 改 title/description 做差异化（见下） |
+| 官方 MCP Registry | registry.modelcontextprotocol.io（`mcp-publisher publish`） | ✅ v0.3.0 已发布（2026-11-19 15:5x），新 title/description 生效；v0.2.0 仍在列表 | 等 Glama 等下游刷新 |
 | awesome-mcp-servers | PR → `punkpeye/awesome-mcp-servers` | ❌ 未提交 | 提 PR，一行，按分类字母序；它会喂给 Glama |
 | Glama | https://glama.ai/mcp/servers → Add Server | ✅ 已收录（2026-11-19 复核：server id 8851745；早先误报未收录，原因是查询参数用了 `?q=` 而站点要 `?query=`） | 等 registry 描述更新后自动刷新 |
 | mcp.so | https://mcp.so/submit（实测 200） | ❌ 未收录；**无免费档**（owner 2026-11-19 实测），$39 一次性即时发布 | 暂不付费；先邮件 support@mcp.so 问免费收录 |
@@ -50,3 +50,14 @@
 私钥已存 `~/.config/mcp-publisher/dns-key.pem`（600，仅本机）。TXT 生效后执行
 `mcp-publisher login dns --domain web3project.top --private-key <hex>` 再
 `mcp-publisher publish`，Glama 等从 registry 拉取的下游会跟着刷新描述。
+
+
+## 2026-11-19 实际执行记录（改元数据）
+
+- DNS 路线失败：publisher 1.8.9 要求 TXT 挂在 **apex**（`web3project.top`），
+  挂 `_mcp-registry` 会 401；NameSilo API 对含空格/分号的值会多包一层引号。
+- 改走 **http 验域**：复用 `deploy/mcp-auth-key.pem`（与 Caddy 里 `respond` 的公钥成对），
+  `mcp-publisher login http --domain web3project.top` → `publish` 成功。
+- 结果：`top.web3project/mcp-audit` 现有 0.2.0 与 0.3.0 两条，均 active。
+- 临时 DNS 记录已删（apex 已干净；`_mcp-registry` 残留仍在 DNS 缓存里，会自动过期）。
+- Glama 仍显示旧 description（缓存），下次复核。
