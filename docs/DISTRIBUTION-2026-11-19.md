@@ -4,8 +4,8 @@
 
 我们上架的条目身份（registry name 不可改，只能改 title/description）：
 - name: `top.web3project/mcp-audit`
-- version: 0.2.0
-- website: https://web3project.top/intel
+- version: 0.2.0（0.3.0 已改好 server.json 并校验通过，待 DNS TXT 后发布）
+- website: https://web3project.top/mcp-audit（0.3.0 起；0.2.0 是 /intel）
 
 ## 状态表
 
@@ -13,10 +13,10 @@
 |---|---|---|---|
 | 官方 MCP Registry | registry.modelcontextprotocol.io（`mcp-publisher publish`） | ✅ 已在架，API 实查 2026-11-19：`top.web3project/mcp-audit` v0.2.0 | 改 title/description 做差异化（见下） |
 | awesome-mcp-servers | PR → `punkpeye/awesome-mcp-servers` | ❌ 未提交 | 提 PR，一行，按分类字母序；它会喂给 Glama |
-| Glama | https://glama.ai/mcp/servers → Add Server | ❌ 未收录（2026-11-19 搜索无命中） | 提交；它给质量/许可证评分 |
-| mcp.so | https://mcp.so/submit（实测 200） | ❌ 未收录（站内有同名他人的条目，无 web3project 命中） | 免费提交；$39 可即时发布+徽章 |
+| Glama | https://glama.ai/mcp/servers → Add Server | ✅ 已收录（2026-11-19 复核：server id 8851745；早先误报未收录，原因是查询参数用了 `?q=` 而站点要 `?query=`） | 等 registry 描述更新后自动刷新 |
+| mcp.so | https://mcp.so/submit（实测 200） | ❌ 未收录；**无免费档**（owner 2026-11-19 实测），$39 一次性即时发布 | 暂不付费；先邮件 support@mcp.so 问免费收录 |
 | Smithery | https://smithery.ai/new | ❓ 搜索页 404，未确认是否收录 | 直接提交，不依赖搜索页 |
-| MCP Market | https://mcpmarket.com/submit | ❌ 未提交 | 免费队列；$29 插队 |
+| MCP Market | https://mcpmarket.com/submit | 🕓 owner 已提交（2026-11-19），站内暂未检索到，等待审核/邮件 | 收到邮件后回填 |
 | mcpservers.org | https://mcpservers.org/submit | ❌ 未提交 | 免费审核约 2 周；$39 24 小时 |
 | LobeHub MCP | https://lobehub.com/mcp | ❌ 未提交 | 用 repo 提交 |
 | cursor.directory | https://cursor.directory | ❌ 未提交 | 面向 Cursor 用户，优先级低 |
@@ -37,3 +37,16 @@
 - 可自动：查状态（curl + 关键词）、准备提交文案、PR 文本。
 - 需人工点一下：GitHub 登录态的 PR、需要邮箱验证的表单、图形验证码。
   这类动作集中成一次「低频人工批次」，不散着问。
+
+
+## 官方 Registry 元数据更新：卡在一条 DNS TXT
+
+`mcp-publisher validate` 已通过（description ≤100 字符限制已适配）。DNS 认证要求：
+
+- 记录名：`_mcp-registry.web3project.top`
+- 类型：TXT
+- 值（公钥证明，非私钥）：`v=MCPv1; k=ed25519; p=np8NDfESlFQwy4liTdINfoiBuCWrVLTbOzpBe5HP8aQ=`
+
+私钥已存 `~/.config/mcp-publisher/dns-key.pem`（600，仅本机）。TXT 生效后执行
+`mcp-publisher login dns --domain web3project.top --private-key <hex>` 再
+`mcp-publisher publish`，Glama 等从 registry 拉取的下游会跟着刷新描述。
