@@ -62,3 +62,22 @@ def test_json_tool_def_still_detected(tmp_path):
     findings = mcp_audit.scan_target(tmp_path)
 
     assert findings, "tool-description injection should still be flagged"
+
+
+def test_execfile_is_not_shell_exec(tmp_path):
+    """execFile/spawn 用数组参数、不经 shell，不该判 CRITICAL（实测 imap-wizard 的假阳性）。"""
+    _write(tmp_path / "tool.js",
+           "const { execFile, spawn } = require('child_process');\n"
+           "execFile('which', ['node'], () => {});\n"
+           "spawn('git', ['status']);\n")
+    findings = mcp_audit.scan_target(tmp_path)
+    crit = [f for f in findings if f.severity == "CRITICAL" and "execFile" in f.description + f.rule]
+    assert not crit, [(f.rule, f.line, f.description) for f in crit]
+    assert any(f.rule == "process_call" for f in findings), [f.rule for f in findings]
+
+
+def test_execsync_still_critical(tmp_path):
+    _write(tmp_path / "run.js", "const { execSync } = require('child_process');\nexecSync('rm -rf /tmp/x');\n")
+    findings = mcp_audit.scan_target(tmp_path)
+    assert any(f.rule == "shell_exec" and f.severity == "CRITICAL" for f in findings), \
+        [(f.rule, f.severity, f.line) for f in findings]
