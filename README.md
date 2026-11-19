@@ -15,7 +15,7 @@ $ python3 mcp_audit.py tests/sample_vuln.py
 [CRITICAL] tests/sample_vuln.py:10  shell 命令执行  (call:os.system)
 [CRITICAL] tests/sample_vuln.py:12  subprocess shell=True（命令注入面）  (shell_injection)
 [CRITICAL] tests/sample_vuln.py:14  动态代码执行  (call:eval)
-[    HIGH] tests/sample_vuln.py:4  导入 subprocess（可执行 shell）  (import:subprocess)
+[     LOW] tests/sample_vuln.py:4  导入 subprocess（仅在使用处才相关）  (import:subprocess)
 [    HIGH] tests/sample_vuln.py:12  子进程调用（需确认 shell=True）  (call:subprocess.run)
 ```
 
@@ -89,9 +89,26 @@ jobs:
 
 每次 push/PR 自动跑，发现 CRITICAL 记入流水线日志。
 
-## 固定范围服务（$99）
+## 付费
 
-自己跑免费。需要我帮你接 CI、写逐条发现报告和复现说明，走固定范围服务——见 [SCOPE.md](SCOPE.md)。
+- **$49 自助报告**：给一个公开仓库地址，24 小时内回带文件/行号的报告，不执行你的代码、不留源码。
+  下单与样例：https://web3project.top/mcp-audit
+- **$99 固定范围服务**：帮你接 CI、写逐条发现与复现说明。范围见 [SCOPE.md](SCOPE.md)。
+
+自己本地跑永远免费，MIT。
+
+## 降噪（2026-11-18）
+
+拿真实公开仓库跑才发现，「正则命中就算漏洞」会让报告失去意义：`modelcontextprotocol/servers`
+一次刷出 **247 条发现、其中 124 条 CRITICAL**，绝大多数来自 `package-lock.json` 里的包名和
+`// cp.exec(...)` 这样的注释行。
+
+改法：锁文件跳过；JSON 只做 tool 定义检查；JS/TS 先剥注释与字符串字面量；`.exec(` 这类方法调用
+不再当作全局函数（另加 `child_process` 引入规则兜住真实用法）；`dangerous_fs`、`import:subprocess`
+降级；同一文件同类问题最多列 3 处。
+
+结果：同一个仓库 **247 → 155 条，CRITICAL 124 → 12 条**；另测一个 107★ 的仓库 HIGH 从 145 降到 24。
+回归测试在 `tests/test_scan_noise.py`。
 
 ## 状态
 
