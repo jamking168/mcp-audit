@@ -55,10 +55,14 @@ DANGEROUS_IMPORTS = {
 GENERIC_PATTERNS = {
     # 2026-11-18：加负向前瞻排除 `.exec(` / `.spawn(` 这类**方法调用**——
     # `MARKER_RE.exec(body)` 是正则匹配，不是命令执行，之前被判 CRITICAL。
-    "shell_exec": (re.compile(r"(?<![.\w$])(system|exec|execSync|execFile|popen|spawn|shell)\s*\("),
+    # 2026-11-20：execFile/spawn 是数组参数、不经 shell，之前一律判 CRITICAL 是假阳性
+    # （实测 imap-wizard 的 execFile('which', [cmd]) 被报成 shell 命令执行）。execSync 仍走 shell。
+    "shell_exec": (re.compile(r"(?<![.\w$])(system|exec|execSync|popen)\s*\("),
                    "CRITICAL", "疑似 shell 命令执行"),
     "eval_exec": (re.compile(r"(?<![.\w$])(eval|Function\s*\(|new\s+Function)\b"),
                   "CRITICAL", "疑似动态代码执行"),
+    "process_call": (re.compile(r"(?<![.\w$])(execFile|execFileSync|spawn|spawnSync)\s*\("),
+                     "MEDIUM", "子进程调用（数组参数、不经 shell；需看参数是否含外部输入）"),
     # 排除 `.exec(` 之后会漏掉 child_process.exec；用「引入子进程模块」这条更稳定的信号兜住。
     "child_process": (re.compile(r"(require\s*\(\s*['\"]child_process|from\s+['\"](node:)?child_process)"),
                       "HIGH", "引入子进程能力（参数来源需确认是否受控）"),
