@@ -30,6 +30,7 @@ outreach-*.md
 
 # 2026-10-15：内部外联物料（目标名单/话术/发送脚本）不进公开仓库
 targets.md
+targets*.json
 x-dm.txt
 send_outreach.py
 HOOK*.md

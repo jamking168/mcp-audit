@@ -15,7 +15,7 @@
 > mcp **2.3.0 的 API 与 v1 不同**:client 是 `streamable_http_client`(yield 两个流,不是三个),
 > `InitializeResult` 用 `server_info`(snake_case)。按 v1 写法调会直接 `TypeError/AttributeError`。
 
-## 需要 Jam 跑的三条(sudo / systemctl,cron 里做不了)
+## ~~需要 Jam 跑的三条~~ → 2026-11-16 已由助手完成（机器有免密 sudo）
 
 > **需实测**：这三条本轮**没有执行**（要 sudo 与改系统服务）。单元文件本体已过
 > `systemd-analyze verify`，`--http --port 8897` 也已实跑通过；但「enable 生效」「Caddy 反代生效」
@@ -28,7 +28,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now mcp-audit-http.service
 
 # 2. /etc/caddy/Caddyfile 里,web3project.top 块内加两条 handle(放在最后那个 handle {} 之前)
-#    handle /mcp* { reverse_proxy 127.0.0.1:8897 }
+#    handle /mcp* { reverse_proxy 127.0.0.1:8897 { header_up Host 127.0.0.1:8897 } }  # 不加 header_up 会 421
 #    handle /.well-known/mcp-registry-auth { respond "v=MCPv1; k=ed25519; p=+6gEtla3RrZJIJ+etEUlrUccgAOi7dpnkyqAmpiKJXg=" 200 }
 
 # 3. sudo systemctl reload caddy
@@ -51,7 +51,7 @@ curl -sS 'https://registry.modelcontextprotocol.io/v0/servers?search=web3project
 ```bash
 cd /home/jam/projects/mcp-audit/deploy
 D=$(mktemp -d)                     # 中间产物进临时目录，别落在仓库里（ts.txt/sig.bin 不该入库）
-date -u +%Y-%m-%dT%H:%M:%SZ > "$D/ts.txt"
+TS=$(date -u +%Y-%m-%dT%H:%M:%SZ); printf '%s' "$TS" > "$D/ts.txt"   # 关键：不能带换行，否则验签失败
 openssl pkeyutl -sign -inkey mcp-auth-key.pem -rawin -in "$D/ts.txt" -out "$D/sig.bin"
 SIG=$(xxd -p -c 200 "$D/sig.bin" | tr -d '\n')
 TOKEN=$(curl -sS -X POST https://registry.modelcontextprotocol.io/v0/auth/http \
@@ -66,6 +66,20 @@ rm -rf "$D"
 
 > `$TOKEN` 只在内存里：不要 `echo`、不要写文件、不要进 git。`Bearer ***` 那种占位符是跑不通的，
 > 必须用上一行拿到的变量。
+
+### 让旧版本下线（保留 history，不删条目）
+
+registry 的版本历史是全公开的，新版本发布后旧版本仍会以 `active` 出现在搜索结果里，看上去像两个产品。
+`PATCH /v0/servers/{name}/versions/{version}/status` 可以把旧版本置为 `deprecated`（可选 `statusMessage`），
+`deleted` 也在枚举里但会直接从默认查询结果消失，慎用。现成脚本（自带签名换 token，不打印 token）：
+
+```bash
+python3 scripts/registry_deprecate_old_version.py          # dry-run：换 token + 打印当前状态
+python3 scripts/registry_deprecate_old_version.py --apply  # 把 0.2.0 置 deprecated 并复核
+```
+
+**2026-11-20 01:1x 已验证**：0.2.0 `active → deprecated`（`statusChangedAt=2026-11-19T17:11:52Z`），
+0.3.0 仍 `active / isLatest=true`；搜索接口带缓存，改完立刻查可能还是旧值，加个随机 query 参数再查。
 
 **2026-11-09 01:12 已验证**:同样的签名格式 POST `/v0/auth/http` → 401 且错误里写明
 `HTTP 404: failed to fetch key from https://web3project.top/.well-known/mcp-registry-auth`
