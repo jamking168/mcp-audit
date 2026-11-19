@@ -73,13 +73,25 @@ class TestToolSurface(unittest.TestCase):
     def setUp(self):
         self.server = mcp_server.build_server()
 
-    def test_tool_list_has_exactly_scan_mcp_server(self):
+    def test_tool_list_has_both_tools(self):
         tools = asyncio.run(self.server.list_tools())
-        self.assertEqual([t.name for t in tools], ["scan_mcp_server"])
-        schema = getattr(tools[0], "inputSchema", None) or getattr(tools[0], "input_schema")
+        names = sorted(t.name for t in tools)
+        self.assertEqual(names, ["scan_mcp_server", "scan_public_repo"], names)
+
+        by_name = {t.name: t for t in tools}
+
+        schema = (getattr(by_name["scan_mcp_server"], "inputSchema", None)
+                  or getattr(by_name["scan_mcp_server"], "input_schema"))
         self.assertEqual(schema["properties"]["path"]["type"], "string")
         self.assertEqual(schema["properties"]["include_tests"]["type"], "boolean")
         self.assertIn("path", schema.get("required", []))
+
+        rschema = (getattr(by_name["scan_public_repo"], "inputSchema", None)
+                   or getattr(by_name["scan_public_repo"], "input_schema"))
+        self.assertEqual(rschema["properties"]["repo_url"]["type"], "string")
+        self.assertIn("repo_url", rschema.get("required", []))
+        # 远程工具不能暴露本地路径参数，否则又把不可用的口子装回去
+        self.assertNotIn("path", rschema["properties"])
 
     def test_tool_call_on_vuln_fixture(self):
         result = asyncio.run(self.server.call_tool(

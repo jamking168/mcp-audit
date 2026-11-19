@@ -116,6 +116,34 @@ def build_server():
         return json.dumps(scan_report(path, include_tests),
                           ensure_ascii=False, indent=2)
 
+    @server.tool(
+        name="scan_public_repo",
+        description=("扫描任意公开仓库（github.com / gitlab.com / gitee.com）里的 MCP server 安全风险。"
+                     "直接传仓库 URL，无需下载、无需本地路径。返回按严重度汇总的摘要 + 最多 3 条明细；"
+                     "完整报告（含修复建议/SARIF/CI 模板）见 https://web3project.top/mcp-audit"))
+    def scan_public_repo_tool(repo_url: str) -> str:
+        """参数：repo_url 形如 https://github.com/owner/repo（公开仓库，只读克隆，扫描后立即删除）。"""
+        import remote_scan  # 延迟导入：stdio 模式下不装 git 也能用原来的本地扫描
+        res = remote_scan.scan_public_repo(repo_url, scan_report)
+        if not res.get("ok"):
+            return json.dumps({"ok": False, "error": res.get("error"),
+                               "message": res.get("message")}, ensure_ascii=False)
+        counts: dict = {}
+        for f in res.get("findings", []):
+            k = f.get("severity", "info")
+            counts[k] = counts.get(k, 0) + 1
+        top = [{"severity": f.get("severity"), "rule": f.get("rule"),
+                "file": f.get("file"), "line": f.get("line")}
+               for f in res.get("findings", [])[:3]]
+        return json.dumps({
+            "ok": True, "repo": res.get("repo"),
+            "size_mb": res.get("size_mb"), "scanned_files": res.get("scanned_files"),
+            "finding_count": res.get("finding_count"), "by_severity": counts,
+            "top_findings": top,
+            "full_report": "https://web3project.top/mcp-audit",
+            "note": "免费摘要最多 3 条；完整报告（文件行号+修复建议+SARIF+CI 模板）是 $49 自助报告",
+        }, ensure_ascii=False, indent=2)
+
     return server
 
 
