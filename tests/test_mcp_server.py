@@ -76,7 +76,7 @@ class TestToolSurface(unittest.TestCase):
     def test_tool_list_has_both_tools(self):
         tools = asyncio.run(self.server.list_tools())
         names = sorted(t.name for t in tools)
-        self.assertEqual(names, ["scan_mcp_server", "scan_public_repo"], names)
+        self.assertEqual(names, ["explain_rule", "list_rules", "scan_mcp_server", "scan_public_repo", "scan_to_sarif"], names)
 
         by_name = {t.name: t for t in tools}
 
