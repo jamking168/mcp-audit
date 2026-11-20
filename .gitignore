@@ -47,3 +47,7 @@ find_contacts*.py
 
 # 2026-11-17：访问日志属运行时遥测（含来源 IP/UA），不入库
 logs/
+
+# Glama 看门狗的克隆目录（是别人的仓库，自带 .git）与运行期状态
+.glama-watch/
+state/
