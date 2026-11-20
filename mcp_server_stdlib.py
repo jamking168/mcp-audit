@@ -53,6 +53,31 @@ TOOLS = [
         },
     },
 ]
+TOOLS += [
+    {
+        "name": "list_rules",
+        "description": "列出扫描器的全部规则（规则 id、严重度、说明、修复建议），用于判断这套扫描覆盖什么",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "scan_to_sarif",
+        "description": "扫描本地路径或公开仓库并直接返回 SARIF 2.1.0 文档（可上传 GitHub code scanning）",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "本地绝对路径（与 repo_url 二选一）"},
+                "repo_url": {"type": "string", "description": "公开仓库 URL（与 path 二选一）"},
+                "include_tests": {"type": "boolean", "default": False},
+            },
+        },
+    },
+    {
+        "name": "explain_rule",
+        "description": "查询单条规则的严重度、含义与修复建议",
+        "inputSchema": {"type": "object", "properties": {"rule": {"type": "string"}},
+                        "required": ["rule"]},
+    },
+]
 ALLOWED_HOSTS = ("github.com", "gitlab.com", "gitee.com")
 
 
@@ -107,6 +132,22 @@ def scan_remote(repo_url: str) -> dict:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def sarif_for(args: dict) -> dict:
+    if args.get("repo_url"):
+        data = scan_remote(str(args["repo_url"]))
+        base = str(args["repo_url"])
+    else:
+        data = scan_report(str(args.get("path", "")), bool(args.get("include_tests")))
+        base = ""
+    items = [{"severity": f.get("severity"), "rule": f.get("rule"), "file": f.get("file"),
+              "line": f.get("line"), "desc": f.get("message") or f.get("rule")}
+             for f in data.get("findings", [])]
+    doc = mcp_audit.findings_to_sarif(items, base_uri=base)
+    doc["runs"][0]["properties"] = {"target": data.get("target") or data.get("repo_url"),
+                                    "error": data.get("error"), "scanned_files": data.get("scanned_files")}
+    return doc
+
+
 def handle(req: dict) -> dict | None:
     method = req.get("method")
     rid = req.get("id")
@@ -133,6 +174,15 @@ def handle(req: dict) -> dict | None:
             data = scan_report(args.get("path", ""), bool(args.get("include_tests")))
         elif name == "scan_public_repo":
             data = scan_remote(args.get("repo_url", ""))
+        elif name == "list_rules":
+            rules = mcp_audit.rules_catalog()
+            data = {"count": len(rules), "rules": rules}
+        elif name == "scan_to_sarif":
+            data = sarif_for(args)
+        elif name == "explain_rule":
+            rule = str(args.get("rule", ""))
+            hit = next((r for r in mcp_audit.rules_catalog() if r["rule"] == rule), None)
+            data = hit or {"rule": rule, "error": "rule_not_found"}
         else:
             return {"jsonrpc": "2.0", "id": rid,
                     "error": {"code": -32602, "message": "unknown tool: %s" % name}}

@@ -96,6 +96,55 @@ SARIF_LEVEL = {"CRITICAL": "error", "HIGH": "error", "MEDIUM": "warning",
                "LOW": "note", "INFO": "note"}
 
 
+RULE_ADVICE = {
+    "os.system": "不要把外部输入拼进命令；改用 subprocess 的参数列表形式。",
+    "os.popen": "同上：外部输入进入 shell 就是命令注入。",
+    "subprocess.call": "确认 shell=False，并传参数列表而不是拼接字符串。",
+    "subprocess.run": "确认 shell=False；需要 shell 时对每个参数做白名单校验。",
+    "subprocess.Popen": "确认 shell=False；stdin/stdout 不要直接把用户输入当命令。",
+    "eval": "不要对模型/用户输入调用 eval；改用显式解析（json.loads、ast.literal_eval）。",
+    "exec": "避免 exec 执行动态字符串；需要插件机制时用受限沙箱。",
+    "compile": "动态编译配合 eval/exec 才危险；单独出现时确认输入来源。",
+    "__import__": "动态导入应使用固定白名单模块名。",
+    "pickle": "不要反序列化不可信数据；改用 json。",
+    "yaml": "改用 yaml.safe_load。",
+    "shell_exec": "该调用会经过 shell；确认参数不含外部输入。",
+    "eval_exec": "动态求值接受外部输入即为代码执行。",
+    "process_call": "数组形式传参不经 shell；确认参数来源受控。",
+    "child_process": "引入子进程能力后，重点检查参数是否来自工具入参。",
+    "secret_read": "确认读取的环境变量是否包含密钥，避免回显到日志或响应。",
+    "dangerous_fs": "文件路径若来自工具入参，需要限制在允许目录内。",
+    "secret_env": "不要在代码里硬编码密钥；用环境变量并限制日志输出。",
+}
+DEFAULT_ADVICE = "确认该模式处的数据来源；外部输入进入危险调用即为可利用路径。"
+
+
+def rules_catalog() -> list[dict]:
+    """规则清单：给 agent 和买家看的「这套扫描器到底查什么」。
+
+    rule id 与 findings 里的字符串必须完全一致（call:* / import:* / poison:* /
+    通用模式名），否则解释工具会对不上扫描结果。
+    """
+    out: list[dict] = []
+
+    def add(rule: str, severity: str, desc: str, scope: str) -> None:
+        out.append({"rule": rule, "severity": severity, "description": desc,
+                    "scope": scope, "advice": RULE_ADVICE.get(rule.split(":", 1)[-1], DEFAULT_ADVICE)})
+
+    for fn, (sev, desc) in DANGEROUS_CALLS.items():
+        add(f"call:{fn}", sev, desc, "python")
+    for mod, (sev, desc) in DANGEROUS_IMPORTS.items():
+        add(f"import:{mod}", sev, desc, "python")
+    for name, (pat, sev, desc) in GENERIC_PATTERNS.items():
+        add(name, sev, desc, "generic")
+    for name in POISON_PATTERNS:
+        sev = "MEDIUM" if name in WEAK_POISON_RULES else "HIGH"
+        add(f"poison:{name}", sev, "tool 描述/元数据里的提示注入特征", "tool-metadata")
+    add("command_injection", "CRITICAL", "subprocess 调用带 shell=True", "python")
+    add("secret_env", "MEDIUM", "代码里出现疑似密钥的常量/环境变量名", "generic")
+    return out
+
+
 def findings_to_sarif(findings, base_uri: str = "") -> dict:
     """把发现列表转成 SARIF 2.1.0（GitHub code scanning / CodeQL 可直接上传）。
 

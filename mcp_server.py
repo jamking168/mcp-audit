@@ -34,7 +34,7 @@ TOOL_NAME = "scan_mcp_server"
 
 # 仓库原先没有版本号标记（无 pyproject、无 git tag）。server.json 需要 semver，
 # 这里定一处作为单一出处，测试里断言 server.json 与它一致，避免两边漂。
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 # streamable-http 的端点路径固定为 /mcp：server.json 的 remotes[].url 末尾必须与它一致。
 HTTP_PATH = "/mcp"
@@ -143,6 +143,44 @@ def build_server():
             "full_report": "https://web3project.top/mcp-audit",
             "note": "免费摘要最多 3 条；完整报告（文件行号+修复建议+SARIF+CI 模板）是 $49 自助报告",
         }, ensure_ascii=False, indent=2)
+
+    @server.tool(name="list_rules",
+                 description="列出扫描器的全部规则（规则 id、严重度、说明、修复建议）")
+    def list_rules_tool() -> str:
+        """不需要参数；返回这套扫描器覆盖的规则清单。"""
+        rules = mcp_audit.rules_catalog()
+        return json.dumps({"count": len(rules), "rules": rules}, ensure_ascii=False, indent=2)
+
+    @server.tool(name="scan_to_sarif",
+                 description="扫描本地路径或公开仓库并直接返回 SARIF 2.1.0 文档，可上传 GitHub code scanning")
+    def scan_to_sarif_tool(path: str = "", repo_url: str = "", include_tests: bool = False) -> str:
+        """参数：path（本地绝对路径）或 repo_url（公开仓库），二选一。"""
+        if repo_url:
+            import remote_scan
+            res = remote_scan.scan_public_repo(repo_url, scan_report)
+            if not res.get("ok"):
+                return json.dumps({"error": res.get("error"), "message": res.get("message")},
+                                  ensure_ascii=False)
+            items = [{"severity": f.get("severity"), "rule": f.get("rule"), "file": f.get("file"),
+                      "line": f.get("line"), "desc": f.get("message") or f.get("rule")}
+                     for f in res.get("findings", [])]
+            base = repo_url
+        else:
+            data = scan_report(path, include_tests)
+            items = [{"severity": f.get("severity"), "rule": f.get("rule"), "file": f.get("file"),
+                      "line": f.get("line"), "desc": f.get("message") or f.get("rule")}
+                     for f in data.get("findings", [])]
+            base = ""
+        doc = mcp_audit.findings_to_sarif(items, base_uri=base)
+        return json.dumps(doc, ensure_ascii=False)
+
+    @server.tool(name="explain_rule",
+                 description="查询单条规则的严重度、含义与修复建议")
+    def explain_rule_tool(rule: str) -> str:
+        """参数：rule，例如 call:os.system。"""
+        hit = next((r for r in mcp_audit.rules_catalog() if r["rule"] == rule), None)
+        return json.dumps(hit or {"rule": rule, "error": "rule_not_found"},
+                          ensure_ascii=False, indent=2)
 
     return server
 

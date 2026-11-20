@@ -57,10 +57,15 @@ def main() -> int:
         {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
          "params": {"name": "scan_public_repo", "arguments": {"repo_url": "https://evil.example/x"}}},
         {"jsonrpc": "2.0", "id": 6, "method": "does/not/exist"},
+        {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "list_rules"}},
+        {"jsonrpc": "2.0", "id": 8, "method": "tools/call",
+         "params": {"name": "explain_rule", "arguments": {"rule": "call:os.system"}}},
+        {"jsonrpc": "2.0", "id": 9, "method": "tools/call",
+         "params": {"name": "scan_to_sarif", "arguments": {"path": tmp}}},
     ]
     res = {r.get("id"): r for r in call(reqs)}
 
-    check("通知不产生响应", 0 not in res and len(res) == 6, str(sorted(res)))
+    check("通知不产生响应", 0 not in res and len(res) == 9, str(sorted(res)))
     init = res[1]["result"]
     check("initialize 回显协议版本", init["protocolVersion"] == "2025-11-25")
     check("serverInfo 名称", init["serverInfo"]["name"] == "mcp-audit")
@@ -68,7 +73,8 @@ def main() -> int:
 
     tools = res[2]["result"]["tools"]
     names = sorted(t["name"] for t in tools)
-    check("工具清单", names == ["scan_mcp_server", "scan_public_repo"], str(names))
+    check("工具清单", names == ["explain_rule", "list_rules", "scan_mcp_server",
+                                "scan_public_repo", "scan_to_sarif"], str(names))
     check("scan_mcp_server 必填 path",
           tools[0]["inputSchema"]["required"] == ["path"])
 
@@ -88,6 +94,20 @@ def main() -> int:
     check("拒绝非白名单仓库", json.loads(bad_repo["content"][0]["text"])["error"] == "bad_repo_url")
 
     check("未知方法 -32601", res[6]["error"]["code"] == -32601)
+
+    rules = json.loads(res[7]["result"]["content"][0]["text"])
+    check("规则清单非空", rules["count"] >= 20, str(rules.get("count")))
+    check("规则含修复建议", all("advice" in r for r in rules["rules"]))
+
+    ex = json.loads(res[8]["result"]["content"][0]["text"])
+    check("解释规则命中", ex.get("rule") == "call:os.system" and ex.get("advice"))
+
+    sarif = json.loads(res[9]["result"]["content"][0]["text"])
+    check("SARIF 版本", sarif["version"] == "2.1.0")
+    check("SARIF 有结果", len(sarif["runs"][0]["results"]) >= 1)
+    check("SARIF 规则 id 对得上",
+          sarif["runs"][0]["results"][0]["ruleId"] == "call:os.system",
+          str(sarif["runs"][0]["results"][0]["ruleId"]))
 
     print()
     if _failures:
