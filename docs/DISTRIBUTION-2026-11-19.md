@@ -13,7 +13,7 @@
 |---|---|---|---|
 | 官方 MCP Registry | registry.modelcontextprotocol.io（`mcp-publisher publish`） | ✅ v0.3.0 已发布（2026-11-19 15:5x），新 title/description 生效；v0.2.0 仍在列表 | 等 Glama 等下游刷新 |
 | awesome-mcp-servers | PR → `punkpeye/awesome-mcp-servers` | 🕓 分支已推 `jamking168:add-mcp-audit`（Security 段已加一行）；token 缺 pull_request 权限，PR 未开 | compare 链接点一次 Create PR |
-| Glama | https://glama.ai/mcp/servers → Add Server | ✅ 已收录（2026-11-19 复核：server id 8851745；早先误报未收录，原因是查询参数用了 `?q=` 而站点要 `?query=`） | 等 registry 描述更新后自动刷新 |
+| Glama | https://glama.ai/mcp/servers → Add Server | ✅ 已收录并发布 release 0.1.0（2026-11-20）：页面 `jamking168/mcp-audit`（显示名 mcp-audit-168），**quality score B**（Disambiguation 4/5、Naming 5/5、Tool Count 3/5、Completeness 3/5） | 想要 A 就补工具面（导出 SARIF / 规则清单）再发 0.2.0 |
 | mcp.so | https://mcp.so/submit（实测 200） | ❌ 未收录；**无免费档**（owner 2026-11-19 实测），$39 一次性即时发布 | 暂不付费；先邮件 support@mcp.so 问免费收录 |
 | Smithery | https://smithery.ai/new | ❓ 搜索页 404，未确认是否收录 | 直接提交，不依赖搜索页 |
 | MCP Market | https://mcpmarket.com/submit | 🕓 owner 已提交（2026-11-19），站内暂未检索到，等待审核/邮件 | 收到邮件后回填 |
@@ -61,3 +61,14 @@
 - 结果：`top.web3project/mcp-audit` 现有 0.2.0 与 0.3.0 两条，均 active。
 - 临时 DNS 记录已删（apex 已干净；`_mcp-registry` 残留仍在 DNS 缓存里，会自动过期）。
 - Glama 仍显示旧 description（缓存），下次复核。
+
+
+## Glama 构建踩坑（2026-11-20）
+
+- 管理员页生成的是**它自己的 Dockerfile**，仓库里的 Dockerfile 不被直接使用。
+- 构建机是 Debian trixie：`uv pip install --system` 会装到系统 Python 3.13，被 PEP 668
+  "externally managed" 拒绝（指定 3.12 也没用，uv 仍解析到 /usr）。
+- 解法：加零依赖入口 `mcp_server_stdlib.py`（stdlib 实现 initialize/tools/list/tools/call），
+  Glama 里 Build steps 留 `[]`、CMD `["python","mcp_server_stdlib.py"]`，镜像不装任何 Python 包。
+- 评分维度（页面实读）：Disambiguation、Naming Consistency、Tool Count、Completeness。
+  B 的短板是后两项：工具只有 2 个、扫描是一次性的（无导出/筛选/规则清单）。
