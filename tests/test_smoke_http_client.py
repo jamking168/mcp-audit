@@ -39,7 +39,14 @@ class TestSmokeHttpClient(unittest.TestCase):
         out = r.stdout
         # 三段都要有，且与 deploy/README.md 里贴的实测证据同口径
         self.assertIn("[1] initialize -> mcp-audit", out)
-        self.assertIn("[2] tools/list -> ['scan_mcp_server']", out)
+
+        # tools/list 只校验「必备工具在位」，不锁定完整列表。
+        # 2026-11-20 工具面从 1 个扩到 2 个、再到 5 个，硬编码整行会让每次扩面都误报失败。
+        line = next((l for l in out.splitlines() if l.startswith("[2] tools/list")), "")
+        self.assertTrue(line, "缺少 tools/list 输出：" + out[-400:])
+        for must in ("scan_mcp_server", "scan_public_repo"):
+            self.assertIn(must, line, line)
+
         self.assertIn("[3] tools/call -> keys:", out)
         self.assertIn("findings:", out)
 
