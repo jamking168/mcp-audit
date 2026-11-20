@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+logs/
+tests/
+*.bak*
+state/
+outreach-*
+send_*.py
+contacts*
+targets_*
+x-dm.txt
