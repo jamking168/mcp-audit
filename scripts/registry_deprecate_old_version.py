@@ -9,6 +9,7 @@ Usage:
   python3 registry_deprecate_old_version.py --apply    # PATCH 0.2.0 -> deprecated
 """
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -19,7 +20,9 @@ import urllib.request
 
 BASE = "https://registry.modelcontextprotocol.io"
 SERVER = "top.web3project/mcp-audit"
-OLD, NEW = "0.2.0", "0.3.0"
+# 可由环境变量覆盖，避免每次发版都要改脚本常量（0.4.0 发版时踩过一次）
+OLD = os.environ.get("OLD_VERSION", "0.3.0")
+NEW = os.environ.get("NEW_VERSION", "0.4.0")
 KEY = "/home/jam/projects/mcp-audit/deploy/mcp-auth-key.pem"
 
 
