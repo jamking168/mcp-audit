@@ -12,13 +12,13 @@
 | 渠道 | 提交入口 | 当前状态（核验方式） | 下一步 |
 |---|---|---|---|
 | 官方 MCP Registry | registry.modelcontextprotocol.io（`mcp-publisher publish`） | ✅ v0.3.0 已发布（2026-11-19 15:5x），新 title/description 生效；v0.2.0 仍在列表 | 等 Glama 等下游刷新 |
-| awesome-mcp-servers | PR → `punkpeye/awesome-mcp-servers` | ❌ 未提交 | 提 PR，一行，按分类字母序；它会喂给 Glama |
+| awesome-mcp-servers | PR → `punkpeye/awesome-mcp-servers` | 🕓 分支已推 `jamking168:add-mcp-audit`（Security 段已加一行）；token 缺 pull_request 权限，PR 未开 | compare 链接点一次 Create PR |
 | Glama | https://glama.ai/mcp/servers → Add Server | ✅ 已收录（2026-11-19 复核：server id 8851745；早先误报未收录，原因是查询参数用了 `?q=` 而站点要 `?query=`） | 等 registry 描述更新后自动刷新 |
 | mcp.so | https://mcp.so/submit（实测 200） | ❌ 未收录；**无免费档**（owner 2026-11-19 实测），$39 一次性即时发布 | 暂不付费；先邮件 support@mcp.so 问免费收录 |
 | Smithery | https://smithery.ai/new | ❓ 搜索页 404，未确认是否收录 | 直接提交，不依赖搜索页 |
 | MCP Market | https://mcpmarket.com/submit | 🕓 owner 已提交（2026-11-19），站内暂未检索到，等待审核/邮件 | 收到邮件后回填 |
-| mcpservers.org | https://mcpservers.org/submit | ❌ 未提交 | 免费审核约 2 周；$39 24 小时 |
-| LobeHub MCP | https://lobehub.com/mcp | ❌ 未提交 | 用 repo 提交 |
+| mcpservers.org | https://mcpservers.org/submit | ✅ 2026-11-20 免费提交成功（回执 Review within 2 weeks） | 等审核邮件 |
+| LobeHub MCP | https://lobehub.com/mcp | ⛔ Cloudflare challenge 挡住无头浏览器，两次等待仍未过 | 需真人浏览器 |
 | cursor.directory | https://cursor.directory | ❌ 未提交 | 面向 Cursor 用户，优先级低 |
 | PickAPlugin | https://pickaplugin.com（submit 页） | ❌ 未提交 | 邮件提交 repo 链接 |
 | Docker MCP Catalog | PR → `docker/mcp-registry` | — 不适用 | 我们不是容器分发，跳过 |
