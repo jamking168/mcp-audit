@@ -17,7 +17,7 @@
 | mcp.so | https://mcp.so/submit（实测 200） | ❌ 未收录；**无免费档**（owner 2026-11-19 实测），$39 一次性即时发布 | 暂不付费；先邮件 support@mcp.so 问免费收录 |
 | Smithery | https://smithery.ai/new | ❓ 搜索页 404，未确认是否收录 | 直接提交，不依赖搜索页 |
 | MCP Market | https://mcpmarket.com/submit | 🕓 owner 已提交（2026-11-19），站内暂未检索到，等待审核/邮件 | 收到邮件后回填 |
-| mcpservers.org | https://mcpservers.org/submit | ✅ 2026-11-20 免费提交成功（回执 Review within 2 weeks） | 等审核邮件 |
+| mcpservers.org | https://mcpservers.org/submit | ✅ **已上线**（2026-11-21 收到审核通过邮件）：https://mcpservers.org/servers/jamking168/mcp-audit ；徽章已加进 README | 免费；同站的 awesome-mcp-servers 4k 星曝光是**付费赞助**，按不付款原则不做 |
 | LobeHub MCP | https://lobehub.com/mcp | ⛔ Cloudflare challenge 挡住无头浏览器，两次等待仍未过 | 需真人浏览器 |
 | cursor.directory | https://cursor.directory | ❌ 未提交 | 面向 Cursor 用户，优先级低 |
 | PickAPlugin | https://pickaplugin.com（submit 页） | ❌ 未提交 | 邮件提交 repo 链接 |
@@ -72,3 +72,10 @@
   Glama 里 Build steps 留 `[]`、CMD `["python","mcp_server_stdlib.py"]`，镜像不装任何 Python 包。
 - 评分维度（页面实读）：Disambiguation、Naming Consistency、Tool Count、Completeness。
   B 的短板是后两项：工具只有 2 个、扫描是一次性的（无导出/筛选/规则清单）。
+
+## 2026-11-21 mcpservers.org 通过
+
+- 审核通过邮件：Sat, 21 Nov 2026 00:33:11 +0000，发件 `contact@mcpservers.org`
+- 列表页：https://mcpservers.org/servers/jamking168/mcp-audit （页面有 Cloudflare 人机验证，curl/无头浏览器会被挡，真人浏览器可看）
+- 徽章 `https://mcpservers.org/badge.svg` 可直接访问（200，1224B），已加到 README 顶部
+- 邮件里提到的 awesome-mcp-servers（wong2，4k 星）曝光位是**付费赞助** → 按「不付款」原则放弃，走免费 PR 路径（punkpeye/awesome-mcp-servers #20099 已开）
