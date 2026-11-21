@@ -3,6 +3,8 @@
 [![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/jamking168/mcp-audit)
 [![rated B on Glama](https://glama.ai/mcp/servers/jamking168/mcp-audit/badges/score.svg)](https://glama.ai/mcp/servers/jamking168/mcp-audit)
 
+> 不想自己跑？免费扫描入口 + 第三方报告（$49）+ 接进 CI 的私有扫描资产（$299）：https://web3project.top/mcp-audit
+
 MCP server 安全审计 CLI。静态扫描一个 MCP server 的源码或 tool 定义，找出可被恶意 server 触发的危险模式。
 
 ## 为什么
