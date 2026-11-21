@@ -2,6 +2,13 @@
 
 目标：让「能付钱的人」找到我们的扫描/报告服务。逐站记录**已核验状态**，不写猜测。
 
+> ⛔ **2026-11-22 定：本条线停止新分发投入。** 依据 `COMPETITIVE-2026-11-21.md`：
+> 免费竞品（Cisco mcp-scanner 1.1k★、mcpscanner.cloud 等）已占满搜索前列，
+> 外部真实 `tools/call` 连续 5 天为 0 → 判 PASS（判停线 11-30 按原口径执行）。
+> **已提交的渠道保留**（它们零成本且是免费端点 `scan_public_repo` 的发现路径），
+> 但**不再新开目录提交、不再为 A 评分（Glama 工具面扩写）投工时、不付费买位**。
+> 以后要复活这条线，唯一有差异的方向是「持续监控已接入的 MCP server 是否变坏」。
+
 我们上架的条目身份（registry name 不可改，只能改 title/description）：
 - name: `top.web3project/mcp-audit`
 - version: 0.2.0（0.3.0 已改好 server.json 并校验通过，待 DNS TXT 后发布）
