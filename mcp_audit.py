@@ -217,6 +217,15 @@ def scan_python(path: Path, findings: list[Finding]):
             fn = _name(node.func)
             if fn in DANGEROUS_CALLS:
                 sev, desc = DANGEROUS_CALLS[fn]
+                if fn.startswith("subprocess."):
+                    # 没有 shell=True 的子进程调用本身不是漏洞（参数列表不经 shell）。
+                    # 2026-11-22 实测：不区分会把「跑个 git clone」也报成 HIGH，报告直接失去可信度。
+                    has_shell = any(isinstance(kw, ast.keyword) and kw.arg == "shell"
+                                    and isinstance(kw.value, ast.Constant) and kw.value.value is True
+                                    for kw in node.keywords)
+                    if not has_shell:
+                        sev = "LOW"
+                        desc = "子进程调用（未启用 shell；参数受控即风险低）"
                 findings.append(Finding(sev, f"call:{fn}", desc,
                                         str(path), node.lineno))
             # subprocess + shell=True → 命令注入升级
@@ -419,7 +428,8 @@ def collect_targets(root: Path, include_tests: bool = False):
     return out
 
 
-def scan_target(root: Path, include_tests: bool = False) -> list[Finding]:
+def scan_target(root: Path, include_tests: bool = False,
+                max_per_rule: int = 0, min_severity: str = "LOW") -> list[Finding]:
     """扫描一个文件或目录，返回排好序的发现列表。
 
     从 main() 里抽出来的：CLI 与 MCP server 必须走**同一套**编排（收集 → 分派扫描器 →
@@ -458,6 +468,33 @@ def scan_target(root: Path, include_tests: bool = False) -> list[Finding]:
                                   file, 0))
     findings = capped
 
+    # 全局同类上限：大仓库里 os.system 这类规则可能几十条，逐条列等于把报告变成日志。
+    # 只保留最靠前的 max_per_rule 条，剩下的折成一条 :more（仍是真实计数，不隐瞒）。
+    if max_per_rule and max_per_rule > 0:
+        seen: dict[str, int] = {}
+        trimmed: list[Finding] = []
+        extra: dict[str, int] = {}
+        for f in findings:
+            if f.rule.endswith(":more"):
+                trimmed.append(f)
+                continue
+            n = seen.get(f.rule, 0)
+            if n < max_per_rule:
+                trimmed.append(f)
+                seen[f.rule] = n + 1
+            else:
+                extra[f.rule] = extra.get(f.rule, 0) + 1
+        for rule, n in extra.items():
+            trimmed.append(Finding("INFO", rule + ":more",
+                                   f"全仓另有 {n} 处同类问题（每规则最多列 {max_per_rule} 处）",
+                                   "", 0))
+        findings = trimmed
+
+    order_all = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
+    if min_severity and min_severity.upper() != "LOW":
+        floor = order_all.get(min_severity.upper(), 3)
+        findings = [f for f in findings if order_all.get(f.severity, 9) <= floor]
+
     # 报告里的路径一律相对仓库根：绝对路径既泄露本机目录结构，客户也没法照着定位。
     if root.is_dir():
         root_str = str(root.resolve())
@@ -477,6 +514,10 @@ def main(argv=None) -> int:
     ap.add_argument("--json", action="store_true", help="输出 JSON")
     ap.add_argument("--include-tests", action="store_true",
                     help="同时扫描测试/样例/fixture 文件（默认跳过，避免报告被测试噪音淹没）")
+    ap.add_argument("--max-per-rule", type=int, default=0,
+                    help="每条规则最多列多少处（0=不限；大仓库建议 8）")
+    ap.add_argument("--min-severity", default="LOW", choices=["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+                    help="只输出不低于该严重度的发现")
     ap.add_argument("--sarif", metavar="PATH",
                     help="把 SARIF 2.1.0 写到 PATH（GitHub code scanning 可直接上传）")
     args = ap.parse_args(argv)
@@ -486,7 +527,8 @@ def main(argv=None) -> int:
         print(f"目标不存在: {root}", file=sys.stderr)
         return 2
 
-    findings = scan_target(root, include_tests=args.include_tests)
+    findings = scan_target(root, include_tests=args.include_tests,
+                           max_per_rule=args.max_per_rule, min_severity=args.min_severity)
 
     if args.json:
         print(json.dumps({"findings": [f.to_dict() for f in findings],
