@@ -65,7 +65,7 @@ GENERIC_PATTERNS = {
                      "MEDIUM", "子进程调用（数组参数、不经 shell；需看参数是否含外部输入）"),
     # 排除 `.exec(` 之后会漏掉 child_process.exec；用「引入子进程模块」这条更稳定的信号兜住。
     "child_process": (re.compile(r"(require\s*\(\s*['\"]child_process|from\s+['\"](node:)?child_process)"),
-                      "HIGH", "引入子进程能力（参数来源需确认是否受控）"),
+                      "LOW", "引入子进程能力（参数来源需确认是否受控）"),
     "secret_read": (re.compile(r"(process\.env\.[A-Z_]*|getenv\(|environ\.get\(|os\.environ)", re.IGNORECASE),
                     "MEDIUM", "读取环境变量（需核对是否含密钥）"),
     # 2026-11-18 降级：Node/Python 项目里 readFileSync/unlink 是常规操作，实测单仓 145 条 HIGH
