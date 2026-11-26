@@ -25,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mcp_audit  # noqa: E402
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 PROTOCOL = "2025-11-25"
 TOOLS = [
     {

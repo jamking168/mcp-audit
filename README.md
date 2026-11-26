@@ -237,7 +237,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: jamking168/mcp-audit@v0.4.1
+      - uses: jamking168/mcp-audit@v0.4.2
         id: audit
         with:
           path: "."
