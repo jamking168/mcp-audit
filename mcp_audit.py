@@ -72,6 +72,26 @@ GENERIC_PATTERNS = {
     # 「危险文件读写」把真正要看的东西全埋了。只在路径来自外部输入时才值得关注，因此降为 LOW。
     "dangerous_fs": (re.compile(r"(readFileSync|writeFileSync|createWriteStream|rmSync|unlink)", re.IGNORECASE),
                      "LOW", "文件读写（常规操作；路径若来自外部输入才需要关注）"),
+    # 2026-11-26：补齐「硬编码密钥」漏检。此前 secret_env 只查 os.getenv("API_KEY")
+    # 这类**读取**行为，把密钥直接写进代码（const API_KEY = "sk-live-..."）完全不管，
+    # 而 README 一直宣称能查「泄露的密钥」—— 实测漏报，GitHub Action 门禁也因此放行。
+    # 占位符（your_/xxx/changeme/example/dummy/placeholder/sample/redacted）排除。
+    "hardcoded_secret": (
+        re.compile(
+            r"(?:"
+            r"(?<![A-Za-z0-9])(?:AKIA|ASIA)[0-9A-Z]{16}"                                    # AWS key id
+            r"|sk-(?:live|test|proj)?-?[A-Za-z0-9]{20,}"                                     # OpenAI/Stripe 风格
+            r"|(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}"                                     # GitHub token
+            r"|github_pat_[A-Za-z0-9_]{20,}"
+            r"|xox[baprs]-[A-Za-z0-9-]{10,}"                                                 # Slack
+            r"|AIza[0-9A-Za-z_\-]{30,}"                                                      # Google API key
+            r"|-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----"
+            r"|(?:api[_-]?key|apikey|secret|token|password|passwd|access[_-]?key)\s*[:=]\s*['\"]"
+            r"(?!(?i:your|xxx|changeme|example|dummy|placeholder|sample|redacted|todo))"
+            r"[A-Za-z0-9_\-\.]{16,}['\"]"
+            r")",
+            re.IGNORECASE),
+        "HIGH", "疑似硬编码密钥/令牌（应以环境变量注入）"),
 }
 
 # 危险 import 名（非 Python）
@@ -285,6 +305,22 @@ def _strip_js_noise(line: str) -> str:
     return s
 
 
+def scan_secret_literals(path: Path, findings: list[Finding]) -> None:
+    """行级检查硬编码密钥字面量。
+
+    Python 文件走 AST 规则表，GENERIC_PATTERNS 不参与，所以这里单独补一条。
+    只看原始行（不去噪）：密钥就写在字符串里，去噪后会被抹成 ""。
+    """
+    pat, sev, desc = GENERIC_PATTERNS["hardcoded_secret"]
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+    for line_no, line in enumerate(text.splitlines(), 1):
+        if pat.search(line):
+            findings.append(Finding(sev, "hardcoded_secret", desc, str(path), line_no))
+
+
 def scan_generic(path: Path, findings: list[Finding]):
     text = path.read_text(encoding="utf-8", errors="replace")
     is_js = path.suffix in {".js", ".mjs", ".cjs", ".ts"}
@@ -295,7 +331,8 @@ def scan_generic(path: Path, findings: list[Finding]):
         for rule, (pat, sev, desc) in GENERIC_PATTERNS.items():
             # child_process 的关键信息就在字符串字面量里（require('child_process')），
             # 所以这条用原始行匹配，其余用去噪后的行。
-            target = line if rule == "child_process" else probe
+            # hardcoded_secret 同理：密钥就在字符串里，去噪后变成 "" 就永远抓不到（2026-11-26 实测）。
+            target = line if rule in ("child_process", "hardcoded_secret") else probe
             if pat.search(target):
                 findings.append(Finding(sev, rule, desc, str(path), line_no))
 
@@ -442,6 +479,9 @@ def scan_target(root: Path, include_tests: bool = False,
         try:
             if path.suffix == ".py":
                 scan_python(path, findings)
+                # Python 走 AST 路径，GENERIC_PATTERNS 不会执行 —— 硬编码密钥会全漏
+                # （2026-11-26 实测：API_KEY = "AKIA..." 在 .py 里零发现）。只补这一条。
+                scan_secret_literals(path, findings)
             elif path.suffix == ".json":
                 # 2026-11-18：JSON 只走工具定义检查。之前 JSON 也过一遍通用代码规则，
                 # 于是 package.json 里的 "exec" 之类字符串被判成 CRITICAL 动态代码执行。
