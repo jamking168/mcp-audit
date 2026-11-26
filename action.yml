@@ -1,0 +1,77 @@
+name: "MCP Security Scan"
+description: "Static security scan for MCP servers: command injection, unsafe file access, leaked secrets, prompt injection. Emits SARIF for GitHub code scanning."
+author: "jamking168"
+branding:
+  icon: "shield"
+  color: "red"
+
+inputs:
+  path:
+    description: "Path to scan (default: repository root)"
+    required: false
+    default: "."
+  max-per-rule:
+    description: "Max findings listed per rule (0 = unlimited)"
+    required: false
+    default: "8"
+  min-severity:
+    description: "Lowest severity to report: CRITICAL, HIGH, MEDIUM or LOW"
+    required: false
+    default: "HIGH"
+  fail-on:
+    description: "Fail the job when findings at this level exist: none, critical or high"
+    required: false
+    default: "none"
+  sarif-file:
+    description: "Where to write SARIF (upload it with github/codeql-action/upload-sarif)"
+    required: false
+    default: "mcp-audit.sarif"
+
+outputs:
+  critical:
+    description: "Number of CRITICAL findings"
+    value: ${{ steps.gate.outputs.critical }}
+  high:
+    description: "Number of HIGH findings"
+    value: ${{ steps.gate.outputs.high }}
+  sarif:
+    description: "Absolute path of the generated SARIF file"
+    value: ${{ steps.gate.outputs.sarif }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Scan (JSON)
+      shell: bash
+      env:
+        IN_PATH: ${{ inputs.path }}
+        IN_MAX: ${{ inputs.max-per-rule }}
+        IN_MIN: ${{ inputs.min-severity }}
+      run: |
+        python3 "$GITHUB_ACTION_PATH/mcp_audit.py" "$IN_PATH" \
+          --json --max-per-rule "$IN_MAX" --min-severity "$IN_MIN" \
+          > "$RUNNER_TEMP/mcp-audit.json"
+
+    - name: Scan (SARIF)
+      shell: bash
+      env:
+        IN_PATH: ${{ inputs.path }}
+        IN_MAX: ${{ inputs.max-per-rule }}
+        IN_MIN: ${{ inputs.min-severity }}
+        OUT_SARIF: ${{ inputs.sarif-file }}
+      run: |
+        python3 "$GITHUB_ACTION_PATH/mcp_audit.py" "$IN_PATH" \
+          --sarif "$OUT_SARIF" --max-per-rule "$IN_MAX" --min-severity "$IN_MIN" >/dev/null
+
+    - name: Gate
+      id: gate
+      shell: bash
+      env:
+        IN_FAIL_ON: ${{ inputs.fail-on }}
+        OUT_SARIF: ${{ inputs.sarif-file }}
+      run: |
+        python3 "$GITHUB_ACTION_PATH/scripts/ci_gate.py" \
+          --report "$RUNNER_TEMP/mcp-audit.json" \
+          --sarif "$OUT_SARIF" \
+          --fail-on "$IN_FAIL_ON" \
+          --summary "$GITHUB_STEP_SUMMARY"

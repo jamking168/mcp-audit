@@ -220,3 +220,36 @@ curl -s -X POST https://registry.modelcontextprotocol.io/v0/validate \
 ```
 
 注：`description` 有 100 字符上限（超了返回 422 `expected length <= 100`）。
+
+## 在 CI 里跑（GitHub Action）
+
+扫描可以当成一个 composite action 用，输出 SARIF，直接进 GitHub code scanning：
+
+```yaml
+name: mcp-security
+on: [push, pull_request]
+permissions:
+  contents: read
+  security-events: write      # 上传 SARIF 需要
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jamking168/mcp-audit@v0.4.0
+        id: audit
+        with:
+          path: "."
+          min-severity: "HIGH"
+          fail-on: "none"        # none | critical | high
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: mcp-audit.sarif
+```
+
+`fail-on: high` 会让有 CRITICAL/HIGH 命中的流水线失败；默认 `none` 只报告、不挡合并。
+输出变量：`steps.audit.outputs.critical` / `.high` / `.sarif`。
+
+扫描是静态模式匹配，不等于漏洞证明——先看命中位置再决定要不要当阻断条件。
